@@ -2,12 +2,11 @@
 
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { useTheme } from '@/app/theme-provider'
 
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
-  theme: string
+  theme: 'light' | 'dark'
 }
 
 export function AuthModal({ isOpen, onClose, theme }: AuthModalProps): JSX.Element | null {
