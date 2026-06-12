@@ -1,6 +1,8 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { createElement, type ReactElement, type ReactNode } from 'react'
+
 import { ThemeProvider } from './theme-provider'
 import './globals.css'
 
@@ -32,16 +34,16 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
-}>) {
-  return (
-    <html lang="en" className={`${inter.variable} dark bg-canvas`}>
-      <body className="font-sans antialiased text-ink">
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
-    </html>
+  children: ReactNode
+}>): ReactElement {
+  return createElement(
+    'html',
+    { lang: 'en', className: `${inter.variable} dark bg-canvas` },
+    createElement(
+      'body',
+      { className: 'font-sans antialiased text-ink' },
+      createElement(ThemeProvider, null, children),
+      process.env.NODE_ENV === 'production' ? createElement(Analytics) : null,
+    ),
   )
 }
