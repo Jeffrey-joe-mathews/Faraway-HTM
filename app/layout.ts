@@ -1,12 +1,9 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import { createElement, type ReactElement, type ReactNode } from 'react'
 
 import { ThemeProvider } from './theme-provider'
 import './globals.css'
-
-const inter = Inter({ variable: '--font-sans', subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Interview Arena | Gamified AI-Powered Interview Prep',
@@ -38,7 +35,7 @@ export default function RootLayout({
 }>): ReactElement {
   return createElement(
     'html',
-    { lang: 'en', className: `${inter.variable} dark bg-canvas` },
+    { lang: 'en', className: 'dark bg-canvas' },
     createElement(
       'body',
       { className: 'font-sans antialiased text-ink' },
