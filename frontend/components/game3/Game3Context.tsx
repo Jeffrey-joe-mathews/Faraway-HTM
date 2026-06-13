@@ -117,18 +117,32 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
     fetchNextCard();
   };
 
-  const fetchNextCard = () => {
-    setCurrentCard({
-      id: 'c1',
-      title: 'Vision Transformers vs. Convolutional Neural Networks',
-      category: 'Machine Learning Architecture',
-      difficulty: 'hard'
-    });
-    setTimeRemaining(sessionConfig?.timePerRound || 90);
-    setTimerActive(true);
-    setAnswer('');
-    setAudioBlob(null);
-    setEvaluationResult(null);
+  const fetchNextCard = async () => {
+    // Get all the IDs we've already played so we don't get repeats
+    const usedIds = cardHistory.map(h => h.card.id);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/game3/next-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ excludeIds: usedIds })
+      });
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        setCurrentCard(result.data);
+        setTimeRemaining(sessionConfig?.timePerRound || 90);
+        setTimerActive(true);
+        setAnswer('');
+        setAudioBlob(null);
+        setEvaluationResult(null);
+      } else {
+        // If we somehow run out of questions, just end the game gracefully
+        generateFinalResults('completed');
+      }
+    } catch (error) {
+      console.error("Failed to fetch next card:", error);
+    }
   };
 
   const submitAnswer = async () => {
@@ -136,43 +150,82 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
     setIsEvaluating(true);
     setSessionState('evaluating');
 
-    // Simulate Backend AI Agent Evaluation
-    setTimeout(() => {
-      const isGood = answer.length > 50 || audioBlob;
-      const score = isGood ? 82 : 25;
-      const lifeLost = score < 30;
-      
-      const newEvaluation: EvaluationResult = {
-        clarity: isGood ? 22 : 5,
-        structure: isGood ? 20 : 10,
-        depth: isGood ? 18 : 5,
-        brevity: isGood ? 22 : 5,
-        totalScore: score,
-        feedback: isGood 
-          ? 'Excellent articulation. You hit the key architectural differences clearly.' 
-          : 'Too brief. Try to outline the spatial vs sequential processing differences.',
-        xpAwarded: isGood ? 150 : 10,
-        lifeConsumed: lifeLost,
-        livesRemaining: livesRemaining - (lifeLost ? 1 : 0),
-        streak: isGood && !lifeLost ? streak + 1 : 0
-      };
+    try {
+      let response;
 
-      setStreak(newEvaluation.streak);
-      setLivesRemaining(newEvaluation.livesRemaining);
-      setEvaluationResult(newEvaluation);
-      setIsEvaluating(false);
+      // 1. ROUTE AUDIO TO THE MULTIPART ENDPOINT
+      if (inputMode === 'mic' && audioBlob) {
+        const formData = new FormData();
+        formData.append('questionId', currentCard!.id);
+        // We append '.webm' so Flask and Gemini know exactly how to parse the audio format
+        formData.append('audio', audioBlob, 'recording.webm');
 
-      const nextHistory = [...cardHistory, { ...newEvaluation, card: currentCard! }]
-      setCardHistory(nextHistory);
-
-      if (newEvaluation.livesRemaining <= 0) {
-        generateFinalResults('eliminated', nextHistory);
-      } else if (lifeLost) {
-        setSessionState('life_lost');
-      } else {
-        setSessionState('score_reveal');
+        response = await fetch('http://localhost:5000/api/game3/evaluate', {
+          method: 'POST',
+          body: formData,
+          // Note: Do NOT set the 'Content-Type' header here. 
+          // The browser automatically sets it with the correct multipart boundary for FormData.
+        });
+      } 
+      // 2. ROUTE TEXT TO THE JSON ENDPOINT
+      else {
+        response = await fetch('http://localhost:5000/api/game3/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questionId: currentCard!.id,
+            answer: answer,
+          })
+        });
       }
-    }, 2000);
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        const evalData = result.data;
+        const lifeLost = evalData.lifeConsumed;
+        const isGood = evalData.totalScore >= 70; // 70+ keeps the streak alive
+
+        // Map the backend's multi-agent JSON perfectly to your frontend state
+        const newEvaluation: EvaluationResult = {
+          clarity: evalData.clarity,
+          structure: evalData.structure,
+          depth: evalData.depth,
+          brevity: evalData.brevity,
+          totalScore: evalData.totalScore,
+          feedback: evalData.feedback,
+          xpAwarded: evalData.xpAwarded,
+          lifeConsumed: lifeLost,
+          livesRemaining: livesRemaining - (lifeLost ? 1 : 0),
+          streak: isGood && !lifeLost ? streak + 1 : 0
+        };
+
+        setStreak(newEvaluation.streak);
+        setLivesRemaining(newEvaluation.livesRemaining);
+        setEvaluationResult(newEvaluation);
+
+        const nextHistory = [...cardHistory, { ...newEvaluation, card: currentCard! }];
+        setCardHistory(nextHistory);
+
+        // UI State Machine Transitions
+        if (newEvaluation.livesRemaining <= 0) {
+          generateFinalResults('eliminated', nextHistory);
+        } else if (lifeLost) {
+          setSessionState('life_lost');
+        } else {
+          setSessionState('score_reveal');
+        }
+      } else {
+        console.error("Backend Error:", result.message);
+        setSessionState('playing'); // Fail gracefully back to the board
+      }
+
+    } catch (error) {
+      console.error("Network Error:", error);
+      setSessionState('playing'); // Fail gracefully back to the board
+    } finally {
+      setIsEvaluating(false);
+    }
   };
 
   const advanceToNextCard = () => {
