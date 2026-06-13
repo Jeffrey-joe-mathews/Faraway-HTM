@@ -177,7 +177,7 @@ export default function Dashboard() {
         { icon: BookOpenCheck, title: 'Coffee with Interview Arena', detail: 'Start with a calm conversational round built for warm-up practice.', meta: '10 min', route: '#' },
         { icon: BarChart3, title: 'Salary Negotiator Poker', detail: 'Play negotiation hands and practice confident compensation conversations.', meta: '15 min', route: '#' },
         { icon: Brain, title: 'Articulate Master', detail: 'Sharpen clear answers, tighter structure, and polished interview delivery.', meta: '12 min', route: '/game3/session' },
-        { icon: Gamepad2, title: 'Interview Arena', detail: 'Enter the full interview challenge and compete through mixed question rounds.', meta: '20 min', route: '#' },
+        { icon: Gamepad2, title: 'Interview Arena', detail: 'Enter the full interview challenge and compete through mixed question rounds.', meta: '20 min', route: '/game4/session' },
       ].map((game) =>
         createElement('article', { key: game.title, className: 'rounded-[1.25rem] border p-6 transition-transform hover:-translate-y-1', style: { backgroundColor: colors.panel, borderColor: colors.border } },
           createElement('div', { className: 'mb-6 flex items-center justify-between' },
