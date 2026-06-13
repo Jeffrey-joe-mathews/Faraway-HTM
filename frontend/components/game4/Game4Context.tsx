@@ -119,7 +119,8 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
       await apiRequest('/api/dashboard/activity', {
         method: 'POST',
         token,
-        body: {
+      suppressErrors: true,
+      body: {
           gameKey: 'game4',
           title: 'GOOGLY MASTER',
           score: payload.score,
@@ -268,3 +269,4 @@ export const useGame4 = () => {
   if (!context) throw new Error('useGame4 must be used within Game4Provider');
   return context;
 };
+
