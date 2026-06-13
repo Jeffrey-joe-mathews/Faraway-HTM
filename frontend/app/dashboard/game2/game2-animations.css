@@ -1,6 +1,5 @@
 /* game2-animations.css */
 
-/* 3D card flipping structures */
 .card-flip-container {
   perspective: 600px;
 }
@@ -37,7 +36,6 @@
   transform: rotateY(0deg);
 }
 
-/* Staggered card dealing animations at round start */
 @keyframes dealCard {
   0% {
     opacity: 0;
@@ -69,7 +67,6 @@
   animation-delay: 0.55s;
 }
 
-/* Card played transition */
 @keyframes playCard {
   0% {
     transform: scale(1) translateY(0);
@@ -89,7 +86,6 @@
   animation: playCard 0.5s ease-in-out forwards;
 }
 
-/* Prefers reduced motion overrides */
 @media (prefers-reduced-motion: reduce) {
   .card-deal-1,
   .card-deal-2,
@@ -105,7 +101,7 @@
   .card-flip-inner {
     transition: none !important;
   }
-  
+
   .card-flip-inner.is-flipped {
     transform: rotateY(180deg) !important;
   }

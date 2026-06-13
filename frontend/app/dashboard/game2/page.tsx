@@ -11,9 +11,8 @@ import {
   Trophy,
   Sparkles,
   Coins,
-  ChevronRight,
+  Loader2,
   Info,
-  HelpCircle
 } from 'lucide-react'
 
 import { useTheme } from '@/app/theme-provider'
@@ -31,7 +30,7 @@ interface RoundHistory {
 interface PokerCardProps {
   face: 'up' | 'down'
   rank: string
-  suit: '♦' | '♣' | '♥' | '♠' | '★' | string
+  suit: 'â™¦' | 'â™£' | 'â™¥' | 'â™ ' | 'â˜…' | string
   label: string
   sublabel?: string
   selected?: boolean
@@ -53,10 +52,9 @@ function PokerCard({
   playClass = '',
   onClick
 }: PokerCardProps) {
-  const isRed = suit === '♦' || suit === '♥' || suit === '★'
+  const isRed = suit === 'â™¦' || suit === 'â™¥' || suit === 'â˜…'
   const textColor = isRed ? '#ef4444' : '#1f2937'
 
-  // Accessibility labels
   const ariaLabel = face === 'up'
     ? `${label} card, rank ${rank}, suit ${suit} ${sublabel ? `, value ${sublabel}` : ''}`
     : 'Face-down card'
@@ -75,7 +73,6 @@ function PokerCard({
           boxShadow: '0 8px 16px rgba(0,0,0,0.15)'
         }
       },
-      // Decorative center badge
       createElement('div', { className: 'w-full h-full flex items-center justify-center' },
         createElement('div', { className: 'w-10 h-10 rounded-full bg-[#2a2018] flex items-center justify-center border border-[#ff4f00]' },
           createElement('span', { className: 'text-orange-500 font-bold text-lg' }, 'J')
@@ -99,7 +96,6 @@ function PokerCard({
         cursor: onClick ? 'pointer' : 'default'
       }
     },
-    // Top corner symbol
     createElement('div', { className: 'flex justify-between items-start' },
       createElement('div', { className: 'flex flex-col items-center' },
         createElement('span', { className: 'text-sm font-bold', style: { fontFamily: 'Georgia, serif', color: textColor } }, rank),
@@ -107,13 +103,9 @@ function PokerCard({
       ),
       createElement('span', { className: 'text-[9px] font-semibold uppercase tracking-wider text-gray-400' }, 'Arena')
     ),
-
-    // Center Suit Symbol
     createElement('div', { className: 'flex flex-col items-center justify-center flex-1' },
       createElement('span', { className: 'text-3xl leading-none my-1', style: { fontFamily: 'Georgia, serif', color: textColor } }, suit)
     ),
-
-    // Bottom descriptions
     createElement('div', { className: 'text-center border-t pt-2', style: { borderColor: 'rgba(0,0,0,0.06)' } },
       createElement('p', { className: 'text-[10px] font-bold uppercase tracking-wider text-gray-800' }, label),
       sublabel && createElement('p', { className: 'text-[9px] font-extrabold text-orange-600 mt-0.5' }, sublabel)
@@ -125,7 +117,6 @@ function ChipStack({ amount }: { amount: number }) {
   const chipCount = Math.min(20, Math.max(1, Math.round(Math.abs(amount) / 5000)))
   const colorLight = amount >= 0 ? '#4ade80' : '#f87171'
   const colorDark = amount >= 0 ? '#16a34a' : '#dc2626'
-  
   const viewBoxHeight = 10 + chipCount * 5
 
   return createElement('div', { className: 'flex flex-col items-center gap-1.5' },
@@ -139,11 +130,8 @@ function ChipStack({ amount }: { amount: number }) {
       Array.from({ length: chipCount }).map((_, idx) => {
         const y = viewBoxHeight - 8 - idx * 4
         return createElement('g', { key: idx },
-          // Back edge/shadow of the chip
           createElement('ellipse', { cx: 25, cy: y + 2, rx: 20, ry: 5, fill: colorDark }),
-          // Side edge/depth
           createElement('rect', { x: 5, y, width: 40, height: 2, fill: colorDark }),
-          // Front ellipse
           createElement('ellipse', { cx: 25, cy: y, rx: 20, ry: 5, fill: colorLight })
         )
       })
@@ -154,7 +142,6 @@ function ChipStack({ amount }: { amount: number }) {
   )
 }
 
-// DecorativeCardFan - aria-hidden for decorative purposes
 function DecorativeCardFan() {
   return createElement('div', { 'aria-hidden': 'true', className: 'relative h-28 w-48 mx-auto opacity-30 select-none' },
     createElement('div', { className: 'absolute left-2 top-0 w-16 h-24 bg-gray-700 rounded-lg shadow-md transform -rotate-12 border border-gray-600' }),
@@ -167,40 +154,28 @@ export default function Game2Page() {
   const router = useRouter()
   const { theme } = useTheme()
 
-  // Game Phases: 'setup' | 'gameplay' | 'post-session'
   const [phase, setPhase] = useState<'setup' | 'gameplay' | 'post-session'>('setup')
   const [loading, setLoading] = useState<boolean>(false)
-
-  // Setup Form inputs
   const [companyName, setCompanyName] = useState<string>('')
   const [role, setRole] = useState<string>('')
   const [currentOffer, setCurrentOffer] = useState<string>('')
-
-  // Game Parameters
   const [sessionId, setSessionId] = useState<string>('')
   const [companyRange, setCompanyRange] = useState<{ min: number; max: number }>({ min: 0, max: 0 })
   const [fundingStatus, setFundingStatus] = useState<string>('')
   const [hiringFreezeInfo, setHiringFreezeInfo] = useState<string>('')
   const [marketAverage, setMarketAverage] = useState<number>(0)
   const [baseSalary, setBaseSalary] = useState<number>(0)
-
-  // Gameplay Board States
   const [round, setRound] = useState<number>(1)
   const [history, setHistory] = useState<RoundHistory[]>([])
-  
   const [selectedCardType, setSelectedCardType] = useState<'counter' | 'justify' | 'trade' | 'walk' | null>(null)
   const [counterAmountInput, setCounterAmountInput] = useState<string>('')
-  
   const [hrCardFlipped, setHrCardFlipped] = useState<boolean>(false)
   const [playingCard, setPlayingCard] = useState<boolean>(false)
-  
-  // Results
   const [verdict, setVerdict] = useState<'win' | 'lose' | 'fail' | 'perfect_win' | null>(null)
   const [feedback, setFeedback] = useState<string>('')
   const [salaryDelta, setSalaryDelta] = useState<number>(0)
   const [finalSalary, setFinalSalary] = useState<number>(0)
 
-  // Audio elements
   const playSound = (soundType: 'click' | 'deal' | 'success' | 'fail') => {
     try {
       let src = ''
@@ -208,14 +183,13 @@ export default function Game2Page() {
       else if (soundType === 'deal') src = '/sounds/fahhh.mp3'
       else if (soundType === 'success') src = '/sounds/success.mp3'
       else if (soundType === 'fail') src = '/sounds/fail.mp3'
-      
+
       const audio = new Audio(src)
       audio.volume = 0.5
       audio.play().catch(() => {})
     } catch {}
   }
 
-  // Theme styling tokens
   const colors = useMemo(() => {
     const isDark = theme === 'dark'
     return {
@@ -234,17 +208,15 @@ export default function Game2Page() {
     }
   }, [theme])
 
-  // Move Suit Maps for round breakdowns
   const moveSuitMap = (type: 'counter' | 'justify' | 'trade' | 'walk') => {
     switch (type) {
-      case 'counter': return { suit: '♦', rank: 'C', label: 'Counter' }
-      case 'justify': return { suit: '♣', rank: 'J', label: 'Justify' }
-      case 'trade': return { suit: '♥', rank: 'T', label: 'Trade' }
-      case 'walk': return { suit: '♠', rank: 'W', label: 'Walk' }
+      case 'counter': return { suit: 'â™¦', rank: 'C', label: 'Counter' }
+      case 'justify': return { suit: 'â™£', rank: 'J', label: 'Justify' }
+      case 'trade': return { suit: 'â™¥', rank: 'T', label: 'Trade' }
+      case 'walk': return { suit: 'â™ ', rank: 'W', label: 'Walk' }
     }
   }
 
-  // Initialize game session
   const handleStartGame = async () => {
     const offerNum = Number(currentOffer)
     if (!companyName.trim() || !role.trim() || isNaN(offerNum) || offerNum <= 0) return
@@ -262,7 +234,7 @@ export default function Game2Page() {
       })
 
       if (!res.ok) throw new Error('Failed to initialize session')
-      
+
       const data = await res.json()
       setSessionId(data.sessionId)
       setCompanyRange(data.companyRange)
@@ -270,8 +242,6 @@ export default function Game2Page() {
       setHiringFreezeInfo(data.hiringFreezeInfo)
       setMarketAverage(data.marketAverage)
       setBaseSalary(data.baseSalary)
-      
-      // Reset gaming loops
       setRound(1)
       setHistory([])
       setSelectedCardType(null)
@@ -287,7 +257,6 @@ export default function Game2Page() {
     }
   }
 
-  // Process selected move
   const handlePlayCard = async () => {
     if (!selectedCardType || loading) return
 
@@ -300,7 +269,6 @@ export default function Game2Page() {
     setPlayingCard(true)
     playSound('click')
 
-    // Staggered animation delay
     setTimeout(async () => {
       setLoading(true)
       try {
@@ -322,8 +290,6 @@ export default function Game2Page() {
         if (!res.ok) throw new Error('Failed to make move')
 
         const data = await res.json()
-        
-        // Add new round details
         const newRound: RoundHistory = {
           round,
           moveType: selectedCardType,
@@ -331,13 +297,11 @@ export default function Game2Page() {
           hrResponse: data.hrResponse,
           hrCounterOffer: data.hrCounterOffer
         }
-        
+
         const updatedHistory = [...history, newRound]
         setHistory(updatedHistory)
         setSalaryDelta(data.salaryDelta)
         setFinalSalary(data.hrCounterOffer)
-        
-        // Flip HR card face up
         setHrCardFlipped(true)
         playSound('deal')
 
@@ -360,7 +324,6 @@ export default function Game2Page() {
     }, 500)
   }
 
-  // Proceed to next round or show summary
   const handleNextRound = () => {
     setSelectedCardType(null)
     setCounterAmountInput('')
@@ -378,7 +341,6 @@ export default function Game2Page() {
     setPhase('post-session')
   }
 
-  // Clear states on reset
   const handleTryAgain = () => {
     setCompanyName('')
     setRole('')
@@ -396,7 +358,6 @@ export default function Game2Page() {
     setPhase('setup')
   }
 
-  // RENDER SETUP PHASE
   const renderSetup = () => {
     const isFormValid = companyName.trim() && role.trim() && currentOffer.trim() && !isNaN(Number(currentOffer))
 
@@ -414,7 +375,6 @@ export default function Game2Page() {
 
           createElement(DecorativeCardFan, null),
 
-          // Setup Inputs
           createElement('div', { className: 'space-y-4 pt-2' },
             createElement('div', null,
               createElement('label', { className: 'block text-xs font-semibold uppercase tracking-wider mb-2', style: { color: colors.subtle } }, 'Target Company Name'),
@@ -460,29 +420,26 @@ export default function Game2Page() {
                 backgroundColor: isFormValid ? colors.primary : colors.soft,
                 color: isFormValid ? '#fffefb' : colors.subtle
               }
-            }, 'Deals Hand →')
+            }, 'Deals Hand ->')
           )
         )
       )
     )
   }
 
-  // RENDER GAMEPLAY BOARD
   const renderGameplay = () => {
     const currentHROffer = history.length > 0 ? history[history.length - 1].hrCounterOffer : baseSalary
     const isRoundCompleted = history.length >= round
     const isGameOver = verdict !== null
 
-    // Hand moves
     const moves = [
-      { type: 'counter', suit: '♦', rank: 'C', label: 'Counter Offer' },
-      { type: 'justify', suit: '♣', rank: 'J', label: 'Justify' },
-      { type: 'trade', suit: '♥', rank: 'T', label: 'Trade' },
-      { type: 'walk', suit: '♠', rank: 'W', label: 'Walk Away' }
+      { type: 'counter', suit: 'â™¦', rank: 'C', label: 'Counter Offer' },
+      { type: 'justify', suit: 'â™£', rank: 'J', label: 'Justify' },
+      { type: 'trade', suit: 'â™¥', rank: 'T', label: 'Trade' },
+      { type: 'walk', suit: 'â™ ', rank: 'W', label: 'Walk Away' }
     ] as const
 
     return createElement('div', { className: 'grid gap-6 lg:grid-cols-[280px_1fr]' },
-      // Left Sidebar Stats Panel
       createElement('aside', { className: 'space-y-4' },
         createElement('div', { className: 'rounded-[1.25rem] border p-5 space-y-4 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
           createElement('div', null,
@@ -512,32 +469,22 @@ export default function Game2Page() {
             createElement('p', { className: 'text-[11px] mt-0.5', style: { color: colors.muted } }, hiringFreezeInfo)
           )
         ),
-
-        // Pot / chip stack tracker
         createElement('div', { className: 'rounded-[1.25rem] border p-5 backdrop-blur-xl text-center space-y-3', style: { backgroundColor: colors.panel, borderColor: colors.border } },
           createElement('p', { className: 'text-[10px] font-bold uppercase tracking-wider', style: { color: colors.subtle } }, 'Pot (Salary Delta)'),
           createElement(ChipStack, { amount: salaryDelta })
         )
       ),
-
-      // Main Gameplay Table
       createElement('section', { className: 'space-y-6' },
         createElement('div', { className: 'rounded-[1.5rem] border p-6 backdrop-blur-xl space-y-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-          
-          // Header info
           createElement('div', { className: 'flex justify-between items-center border-b pb-4', style: { borderColor: colors.border } },
             createElement('span', { className: 'text-sm font-bold', style: { color: colors.text } }, `Betting Round ${round} of 4`),
             createElement('span', { className: 'text-xs font-semibold px-2 py-0.5 rounded bg-orange-600/10 text-orange-500' },
               `Starting Offer: ${baseSalary.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}`
             )
           ),
-
-          // HR Card & Response
           createElement('div', { className: 'grid gap-6 md:grid-cols-[160px_1fr] items-center p-4 rounded-[1.2rem]', style: { backgroundColor: colors.soft } },
-            // Card layout with perspective inline styling for 3D flip
             createElement('div', { className: 'flex justify-center card-flip-container', style: { perspective: '600px' } },
               createElement('div', { className: `card-flip-inner w-[130px] h-[190px] ${hrCardFlipped ? 'is-flipped' : ''}` },
-                // Back card face-down
                 createElement('div', { className: 'card-flip-back' },
                   createElement(PokerCard, {
                     face: 'down',
@@ -546,26 +493,23 @@ export default function Game2Page() {
                     label: ''
                   })
                 ),
-                // Front card face-up
                 createElement('div', { className: 'card-flip-front' },
                   createElement(PokerCard, {
                     face: 'up',
                     rank: 'H',
-                    suit: '♠',
+                    suit: 'â™ ',
                     label: 'HR Proposal',
                     sublabel: currentHROffer.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
                   })
                 )
               )
             ),
-
-            // HR response speech pane
             createElement('div', { className: 'space-y-2' },
               createElement('p', { className: 'text-xs font-bold uppercase tracking-wider text-orange-500' }, 'HR Manager Response'),
               createElement('p', { className: 'text-sm leading-relaxed italic', style: { color: colors.text } },
                 isRoundCompleted
                   ? history[history.length - 1].hrResponse
-                  : "The HR Manager is waiting for your move. Select a card from your hand below to play."
+                  : 'The HR Manager is waiting for your move. Select a card from your hand below to play.'
               ),
               isRoundCompleted && createElement('div', { className: 'pt-2 flex items-center gap-2' },
                 createElement(Coins, { size: 16, className: 'text-green-500' }),
@@ -575,15 +519,12 @@ export default function Game2Page() {
               )
             )
           ),
-
-          // Round history row showing played cards
           history.length > 0 && createElement('div', { className: 'space-y-2' },
             createElement('p', { className: 'text-[10px] font-bold uppercase tracking-wider text-gray-400' }, 'Played Cards / Round Breakdown'),
             createElement('div', { className: 'flex flex-wrap gap-3 items-center' },
               history.map((hist, idx) => {
                 const details = moveSuitMap(hist.moveType)
                 return createElement('div', { key: idx, className: 'flex items-center gap-1.5' },
-                  // Mini played card representation
                   createElement('div', { className: 'scale-75 origin-left' },
                     createElement(PokerCard, {
                       face: 'up',
@@ -593,25 +534,21 @@ export default function Game2Page() {
                       sublabel: hist.counterAmount ? `$${hist.counterAmount.toLocaleString()}` : undefined
                     })
                   ),
-                  idx < history.length - 1 && createElement('span', { className: 'text-sm text-gray-500 font-bold' }, '→')
+                  idx < history.length - 1 && createElement('span', { className: 'text-sm text-gray-500 font-bold' }, '->')
                 )
               })
             )
           ),
-
-          // User Hand Section
           !isRoundCompleted && createElement('div', { className: 'space-y-6 pt-4 border-t', style: { borderColor: colors.border } },
             createElement('div', { className: 'text-center' },
               createElement('p', { className: 'text-xs font-bold uppercase tracking-wider', style: { color: colors.subtle } }, 'Your Hand (Select a Move Card)'),
               createElement('p', { className: 'text-[10px] mt-0.5', style: { color: colors.muted } }, 'Play a card to respond to the HR Manager')
             ),
-
-            // Card list with staggered dealing classes
             createElement('div', { className: 'flex flex-wrap justify-center gap-4 py-2' },
               moves.map((move, idx) => {
                 const isSelected = selectedCardType === move.type
                 const isDisabled = selectedCardType !== null && selectedCardType !== move.type
-                
+
                 return createElement(PokerCard, {
                   key: move.type,
                   face: 'up',
@@ -630,8 +567,6 @@ export default function Game2Page() {
                 })
               })
             ),
-
-            // Dynamic input parameters if Counter Offer card is selected
             selectedCardType === 'counter' && createElement('div', { className: 'max-w-xs mx-auto animate-fade-in space-y-2' },
               createElement('label', { className: 'block text-xs font-semibold text-center uppercase tracking-wider', style: { color: colors.subtle } }, 'Enter Counter Offer Amount ($)'),
               createElement('input', {
@@ -643,8 +578,6 @@ export default function Game2Page() {
                 style: { borderColor: colors.border, color: colors.text }
               })
             ),
-
-            // Controller
             createElement('div', { className: 'flex justify-center pt-2' },
               createElement(Button, {
                 onClick: handlePlayAgainstLoaderCheck,
@@ -655,32 +588,28 @@ export default function Game2Page() {
                   color: selectedCardType ? '#fffefb' : colors.subtle
                 }
               },
-                loading
-                  ? createElement(Loader2Component, null)
-                  : `${selectedCardType ? 'Play Card →' : 'Select a card'}`
+              loading
+                ? createElement(Loader2Component, null)
+                : `${selectedCardType ? 'Play Card ->' : 'Select a card'}`
               )
             )
           ),
-
-          // Intermediary round resolution controllers
           isRoundCompleted && createElement('div', { className: 'flex justify-center pt-4 border-t', style: { borderColor: colors.border } },
             isGameOver
               ? createElement(Button, {
                   onClick: handleFinishGame,
                   className: 'h-11 px-8 rounded-[0.9rem] text-sm font-semibold'
-                }, 'View Summary & Verdict →')
+                }, 'View Summary & Verdict ->')
               : createElement(Button, {
                   onClick: handleNextRound,
                   className: 'h-11 px-8 rounded-[0.9rem] text-sm font-semibold'
-                }, round < 4 ? `Go to Round ${round + 1} →` : 'Submit Hand →')
+                }, round < 4 ? `Go to Round ${round + 1} ->` : 'Submit Hand ->')
           )
-
         )
       )
     )
   }
 
-  // Loader placeholder component
   const Loader2Component = () => createElement(Loader2ComponentInner, null)
   const Loader2ComponentInner = () => {
     return createElement('div', { className: 'flex items-center gap-2' },
@@ -693,7 +622,6 @@ export default function Game2Page() {
     handlePlayCard()
   }
 
-  // RENDER POST SESSION SUMMARY
   const renderPostSession = () => {
     if (verdict === null) return null
 
@@ -703,16 +631,16 @@ export default function Game2Page() {
     let verdictBorder = 'rgba(234, 179, 8, 0.3)'
 
     let cardRank = 'F'
-    let cardSuit = '♦'
+    let cardSuit = 'â™¦'
     let cardLabel = 'Negotiation Stalled'
 
     if (verdict === 'perfect_win') {
       verdictTitle = 'Perfect Win!'
-      verdictColor = '#eab308' // gold
+      verdictColor = '#eab308'
       verdictBg = 'rgba(234, 179, 8, 0.12)'
       verdictBorder = 'rgba(234, 179, 8, 0.45)'
-      cardRank = '★' // Unicode character, not an emoji
-      cardSuit = '★'
+      cardRank = 'â˜…'
+      cardSuit = 'â˜…'
       cardLabel = 'Perfect Win'
     } else if (verdict === 'win') {
       verdictTitle = 'Offer Accepted'
@@ -720,7 +648,7 @@ export default function Game2Page() {
       verdictBg = 'rgba(34, 197, 94, 0.1)'
       verdictBorder = 'rgba(34, 197, 94, 0.3)'
       cardRank = 'W'
-      cardSuit = '♥'
+      cardSuit = 'â™¥'
       cardLabel = 'Accepted'
     } else if (verdict === 'lose') {
       verdictTitle = 'Offer Withdrawn'
@@ -728,7 +656,7 @@ export default function Game2Page() {
       verdictBg = 'rgba(239, 68, 68, 0.1)'
       verdictBorder = 'rgba(239, 68, 68, 0.3)'
       cardRank = 'L'
-      cardSuit = '♠'
+      cardSuit = 'â™ '
       cardLabel = 'Withdrawn'
     } else if (verdict === 'fail') {
       verdictTitle = 'Negotiation Stalled'
@@ -736,15 +664,13 @@ export default function Game2Page() {
       verdictBg = 'rgba(107, 114, 128, 0.1)'
       verdictBorder = 'rgba(107, 114, 128, 0.3)'
       cardRank = 'F'
-      cardSuit = '♦'
+      cardSuit = 'â™¦'
       cardLabel = 'Stalled'
     }
 
     return createElement('div', { className: 'max-w-2xl mx-auto mt-6' },
       createElement('section', { className: 'overflow-hidden rounded-[1.5rem] border p-6 backdrop-blur-xl lg:p-8', style: { backgroundColor: colors.panel, borderColor: colors.border } },
         createElement('div', { className: 'grid gap-8 md:grid-cols-[160px_1fr] items-center' },
-          
-          // Result representation PokerCard
           createElement('div', { className: 'flex justify-center' },
             createElement(PokerCard, {
               face: 'up',
@@ -754,8 +680,6 @@ export default function Game2Page() {
               sublabel: finalSalary > 0 ? `$${finalSalary.toLocaleString()}` : undefined
             })
           ),
-
-          // Verdict Breakdown details
           createElement('div', { className: 'space-y-6' },
             createElement('div', {
               className: 'rounded-[1.2rem] border p-4 font-semibold text-lg flex items-center gap-2',
@@ -763,7 +687,6 @@ export default function Game2Page() {
             },
               createElement('span', null, verdictTitle)
             ),
-
             createElement('div', { className: 'p-5 rounded-[1.2rem] border text-sm leading-relaxed', style: { backgroundColor: colors.soft, borderColor: colors.border } },
               createElement('p', { className: 'font-semibold mb-2' }, 'Summary Feedback'),
               createElement('p', { style: { color: colors.text } }, feedback),
@@ -771,7 +694,6 @@ export default function Game2Page() {
                 `Total gain: +${salaryDelta.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} / year`
               )
             ),
-
             createElement('div', { className: 'flex gap-3' },
               createElement(Button, {
                 onClick: handleTryAgain,
@@ -796,8 +718,6 @@ export default function Game2Page() {
     'main',
     { className: 'min-h-screen', style: { background: colors.background } },
     createElement('div', { className: 'mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8' },
-      
-      // Header Page Info
       createElement('header', { className: 'mb-6 rounded-[1.25rem] border p-4 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
         createElement('div', { className: 'flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between' },
           createElement('div', null,
@@ -819,8 +739,6 @@ export default function Game2Page() {
           )
         )
       ),
-
-      // Phase Controllers
       phase === 'setup' && renderSetup(),
       phase === 'gameplay' && renderGameplay(),
       phase === 'post-session' && renderPostSession()

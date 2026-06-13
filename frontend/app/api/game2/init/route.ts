@@ -19,8 +19,6 @@ export async function POST(request: Request) {
     }
 
     const sessionId = `poker_${Math.random().toString(36).substring(2, 11)}`
-
-    // Generate company specific details
     const offerNum = Number(currentOffer)
     const minRange = Math.round(offerNum * 0.85)
     const maxRange = Math.round(offerNum * 1.35)
