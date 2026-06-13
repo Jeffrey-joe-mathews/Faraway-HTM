@@ -13,7 +13,28 @@ import { Footer } from '@/components/footer'
 import { AuthModal } from '@/components/auth-modal'
 import { OnboardingFlow, type OnboardingData } from '@/components/onboarding-flow'
 import { useTheme } from '@/app/theme-provider'
-import { apiRequest } from '@/lib/auth'
+import { apiRequest, type AuthUser } from '@/lib/auth'
+
+interface DashboardProfile {
+  goal?: string
+  user_type?: string
+  problems?: string[]
+  onboarding_completed?: boolean
+}
+
+interface DashboardProfileResponse {
+  profile: DashboardProfile
+}
+
+function hasCompletedOnboarding(profile: DashboardProfile): boolean {
+  const hasSavedAnswers = Boolean(
+    profile.goal?.trim() ||
+    profile.user_type?.trim() ||
+    (profile.problems && profile.problems.length > 0),
+  )
+
+  return Boolean(profile.onboarding_completed || hasSavedAnswers)
+}
 
 export default function Home() {
   const router = useRouter()
@@ -28,7 +49,26 @@ export default function Home() {
 
   const handleSignInClick = (): void => setIsAuthModalOpen(true)
   const handleCloseAuthModal = (): void => setIsAuthModalOpen(false)
-  const handleAuthSuccess = (): void => setIsOnboardingOpen(true)
+  const handleAuthSuccess = async (_userData: AuthUser): Promise<void> => {
+    const token = localStorage.getItem('authToken')
+    if (!token) {
+      setIsOnboardingOpen(true)
+      return
+    }
+
+    try {
+      const result = await apiRequest<DashboardProfileResponse>('/api/dashboard/profile', { token })
+      if (hasCompletedOnboarding(result.profile)) {
+        setIsOnboardingOpen(false)
+        router.push('/dashboard')
+        return
+      }
+    } catch (e) {
+      console.error('Failed to load onboarding status:', e)
+    }
+
+    setIsOnboardingOpen(true)
+  }
 
   const handleOnboardingComplete = async (data: OnboardingData): Promise<void> => {
     const token = localStorage.getItem('authToken')
@@ -41,6 +81,7 @@ export default function Home() {
             goal: data.goal,
             userType: data.userType,
             problems: data.problems,
+            onboardingCompleted: true,
           },
         })
       } catch (e) {
@@ -63,6 +104,7 @@ export default function Home() {
             goal: 'Not specified',
             userType: 'Not specified',
             problems: [],
+            onboardingCompleted: true,
           },
         })
       } catch (e) {

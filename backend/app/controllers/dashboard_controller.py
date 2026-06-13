@@ -35,6 +35,7 @@ def update_profile():
             "user_type": payload.get("userType", payload.get("user_type", "")),
             "problems": payload.get("problems", []),
             "focus_areas": payload.get("focusAreas", payload.get("focus_areas", [])),
+            "onboarding_completed": payload.get("onboardingCompleted", payload.get("onboarding_completed")),
         },
     )
     return jsonify(result), 200

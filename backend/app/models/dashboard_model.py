@@ -17,6 +17,7 @@ def serialize_dashboard_profile(profile: dict) -> dict:
         "goal": profile.get("goal", ""),
         "user_type": profile.get("user_type", ""),
         "problems": profile.get("problems", []),
+        "onboarding_completed": bool(profile.get("onboarding_completed", False)),
         "streak_days": int(profile.get("streak_days", 0)),
         "arena_points": int(profile.get("arena_points", 0)),
         "completed_games": int(profile.get("completed_games", 0)),
@@ -70,11 +71,17 @@ def upsert_profile(user_id: str, profile_data: dict):
         source = fallback if value is None else value
         return [str(problem).strip() for problem in source if str(problem).strip()]
 
+    def _bool(value, fallback: bool = False) -> bool:
+        if value is None:
+            return bool(fallback)
+        return bool(value)
+
     profile = {
         "user_id": user_id,
         "goal": _text(profile_data.get("goal"), existing.get("goal", "")),
         "user_type": _text(profile_data.get("user_type"), existing.get("user_type", "")),
         "problems": _list(profile_data.get("problems"), existing.get("problems", [])),
+        "onboarding_completed": _bool(profile_data.get("onboarding_completed"), existing.get("onboarding_completed", False)),
         "focus_areas": _list(profile_data.get("focus_areas"), existing.get("focus_areas", existing.get("problems", []))),
         "streak_days": _int(profile_data.get("streak_days"), existing.get("streak_days", 0) or 0),
         "arena_points": _int(profile_data.get("arena_points"), existing.get("arena_points", 0) or 0),
