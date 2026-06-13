@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { Game3Config, SessionState, ConceptCard, InputMode, EvaluationResult, FullResults, CardResult } from '../../lib/game3.types';
+import { apiRequest } from '@/lib/auth';
 
 interface Game3ContextValue {
   sessionConfig: Game3Config | null;
@@ -48,6 +49,41 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
   const [streak, setStreak] = useState(0);
   const [livesRemaining, setLivesRemaining] = useState(3);
   const [cardHistory, setCardHistory] = useState<CardResult[]>([]);
+
+  const recordProgress = async (payload: {
+    outcome: 'completed' | 'eliminated'
+    totalXp: number
+    finalScore: number
+    history: CardResult[]
+  }) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) return
+
+    const weakAreas = Array.from(new Set(
+      payload.history
+        .filter((card) => card.totalScore < 60)
+        .map((card) => card.card.category)
+    ))
+
+    try {
+      await apiRequest('/api/dashboard/activity', {
+        method: 'POST',
+        token,
+        body: {
+          gameKey: 'game3',
+          title: 'Articulate Master',
+          score: payload.finalScore,
+          pointsAwarded: payload.totalXp,
+          summary: payload.outcome === 'completed'
+            ? 'Completed the articulation challenge and received evaluation feedback.'
+            : 'Ended the articulation challenge early and recorded improvement areas.',
+          focusAreas: weakAreas.length > 0 ? weakAreas : ['clarity', 'structured-answers'],
+        },
+      })
+    } catch (error) {
+      console.error('Failed to record game3 progress:', error)
+    }
+  };
 
   // Timer Effect
   useEffect(() => {
@@ -125,11 +161,12 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
       setLivesRemaining(newEvaluation.livesRemaining);
       setEvaluationResult(newEvaluation);
       setIsEvaluating(false);
-      
-      setCardHistory(prev => [...prev, { ...newEvaluation, card: currentCard! }]);
+
+      const nextHistory = [...cardHistory, { ...newEvaluation, card: currentCard! }]
+      setCardHistory(nextHistory);
 
       if (newEvaluation.livesRemaining <= 0) {
-        generateFinalResults('eliminated');
+        generateFinalResults('eliminated', nextHistory);
       } else if (lifeLost) {
         setSessionState('life_lost');
       } else {
@@ -148,12 +185,15 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const generateFinalResults = (outcome: 'completed' | 'eliminated') => {
-    setResults({
+  const generateFinalResults = (outcome: 'completed' | 'eliminated', historySnapshot: CardResult[] = cardHistory) => {
+    const totalXp = historySnapshot.reduce((acc, curr) => acc + curr.xpAwarded, 0)
+    const finalScore = Math.round(historySnapshot.reduce((acc, curr) => acc + curr.totalScore, 0) / Math.max(historySnapshot.length, 1))
+
+    const finalResults = {
       outcome,
-      totalXp: cardHistory.reduce((acc, curr) => acc + curr.xpAwarded, 0),
-      finalScore: Math.round(cardHistory.reduce((acc, curr) => acc + curr.totalScore, 0) / Math.max(cardHistory.length, 1)),
-      cardBreakdown: cardHistory,
+      totalXp,
+      finalScore,
+      cardBreakdown: historySnapshot,
       agentSummary: {
         clarity: "You generally speak clearly, but occasionally use filler words.",
         structure: "Good start, but try to use the STAR method when explaining tradeoffs.",
@@ -161,7 +201,10 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
         brevity: "You kept answers concise and respected the time limits.",
         overall: "Solid performance. Work on reducing 'ums' to sound more authoritative."
       }
-    });
+    }
+
+    setResults(finalResults);
+    void recordProgress({ outcome, totalXp, finalScore, history: historySnapshot });
     setSessionState('game_over');
   };
 

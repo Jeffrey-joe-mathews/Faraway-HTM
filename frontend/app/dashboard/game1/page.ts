@@ -22,6 +22,7 @@ import {
 
 import { useTheme } from '@/app/theme-provider'
 import { Button } from '@/components/ui/button'
+import { apiRequest } from '@/lib/auth'
 
 interface Question {
   id: number
@@ -70,6 +71,18 @@ function countFillerWords(text: string): number {
     }
   })
   return count
+}
+
+function buildFocusAreas(totalFillerWords: number, avgLength: number, validAnswersCount: number, verdict: 'reject' | 'borderline' | 'clear'): string[] {
+  const areas = new Set<string>()
+
+  if (totalFillerWords > 12) areas.add('communication')
+  if (avgLength < 120) areas.add('answer-depth')
+  if (avgLength < 90) areas.add('structure')
+  if (validAnswersCount < 5) areas.add('completeness')
+  if (verdict === 'clear' && areas.size === 0) areas.add('advanced-consistency')
+
+  return Array.from(areas)
 }
 
 export default function Game1Page() {
@@ -387,6 +400,20 @@ export default function Game1Page() {
 
     setLoading(true)
     try {
+      let totalFillerWords = 0
+      let totalLength = 0
+      let validAnswersCount = 0
+
+      answers.forEach((ans) => {
+        totalFillerWords += ans.fillerWordCount || 0
+        if (ans.transcript && ans.transcript.trim()) {
+          totalLength += ans.transcript.trim().length
+          validAnswersCount += 1
+        }
+      })
+
+      const avgLength = validAnswersCount > 0 ? totalLength / validAnswersCount : 0
+
       const res = await fetch('/api/game1/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -404,6 +431,26 @@ export default function Game1Page() {
       setVerdict(data.verdict)
       setVerdictLetter(data.verdictLetter)
       setFinalReadinessScore(data.finalReadinessScore)
+
+      const token = localStorage.getItem('authToken')
+      if (token) {
+        try {
+          await apiRequest('/api/dashboard/activity', {
+            method: 'POST',
+            token,
+            body: {
+              gameKey: 'game1',
+              title: 'Coffee with Interview Arena',
+              score: data.finalReadinessScore,
+              pointsAwarded: data.finalReadinessScore,
+              summary: data.verdictLetter?.split('\n').slice(0, 3).join(' ') || 'Interview prep completed.',
+              focusAreas: buildFocusAreas(totalFillerWords, avgLength, validAnswersCount, data.verdict),
+            },
+          })
+        } catch (activityError) {
+          console.error('Failed to record game1 progress:', activityError)
+        }
+      }
 
       // Move to post-session
       setPhase('post-session')

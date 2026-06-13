@@ -15,14 +15,27 @@ export function getBackendBaseUrl(): string {
   return 'http://localhost:5000'
 }
 
-export async function authRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    body?: Record<string, unknown>
+    token?: string | null
+  } = {},
+): Promise<T> {
   const baseUrl = getBackendBaseUrl()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (options.token) {
+    headers.Authorization = `Bearer ${options.token}`
+  }
+
   const response = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+    method: options.method ?? 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
   })
 
   const payload = await response.json().catch(() => ({}))
@@ -32,4 +45,8 @@ export async function authRequest<T>(path: string, body: Record<string, unknown>
   }
 
   return payload as T
+}
+
+export async function authRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  return apiRequest<T>(path, { method: 'POST', body })
 }

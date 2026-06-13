@@ -17,6 +17,7 @@ import {
 
 import { useTheme } from '@/app/theme-provider'
 import { Button } from '@/components/ui/button'
+import { apiRequest } from '@/lib/auth'
 import './game2-animations.css'
 
 interface RoundHistory {
@@ -148,6 +149,11 @@ function DecorativeCardFan() {
     createElement('div', { className: 'absolute left-12 top-0 w-16 h-24 bg-orange-700 rounded-lg shadow-md transform rotate-0 border border-orange-600' }),
     createElement('div', { className: 'absolute left-22 top-0 w-16 h-24 bg-gray-800 rounded-lg shadow-md transform rotate-12 border border-gray-700' })
   )
+}
+
+function buildGame2Points(verdict: 'win' | 'lose' | 'fail' | 'perfect_win' | null, salaryDelta: number): number {
+  const base = verdict === 'perfect_win' ? 220 : verdict === 'win' ? 160 : verdict === 'lose' ? 40 : verdict === 'fail' ? 20 : 0
+  return base + Math.max(0, Math.round(salaryDelta / 1000))
 }
 
 export default function Game2Page() {
@@ -312,6 +318,28 @@ export default function Game2Page() {
             setTimeout(() => playSound('success'), 600)
           } else {
             setTimeout(() => playSound('fail'), 600)
+          }
+
+          const token = localStorage.getItem('authToken')
+          if (token) {
+            try {
+              await apiRequest('/api/dashboard/activity', {
+                method: 'POST',
+                token,
+                body: {
+                  gameKey: 'game2',
+                  title: 'Salary Negotiator Poker',
+                  score: data.hrCounterOffer,
+                  pointsAwarded: buildGame2Points(data.verdict, data.salaryDelta),
+                  summary: data.feedback || 'Negotiation session completed.',
+                  focusAreas: data.verdict === 'perfect_win' || data.verdict === 'win'
+                    ? ['negotiation']
+                    : ['salary-strategy', 'market-research'],
+                },
+              })
+            } catch (activityError) {
+              console.error('Failed to record game2 progress:', activityError)
+            }
           }
         }
       } catch (err) {

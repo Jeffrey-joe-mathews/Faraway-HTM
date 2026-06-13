@@ -22,15 +22,42 @@ import {
 
 import { useTheme } from '@/app/theme-provider'
 import { Button } from '@/components/ui/button'
-
-interface DashboardUser {
-  name: string
-  goal: string
-  userType: string
-  problems: string[]
-}
+import { apiRequest } from '@/lib/auth'
 
 type DashboardSection = 'home' | 'games' | 'leaderboard' | 'profile'
+
+type DashboardOverview = {
+  user: {
+    id: string
+    email: string
+    name: string
+    goal: string
+    user_type: string
+    problems: string[]
+  }
+  stats: {
+    streak_days: number
+    arena_points: number
+    focus_area_count: number
+    completed_games: number
+    weekly_progress: number
+  }
+  focus_areas: string[]
+  next_session: Array<{ label: string; detail: string }>
+  games: Array<{
+    title: string
+    detail: string
+    meta: string
+    route: string
+    icon: string
+  }>
+  leaderboard: Array<{
+    rank: number
+    name: string
+    points: number
+    is_current_user?: boolean
+  }>
+}
 
 const navItems: Array<{ id: DashboardSection; label: string; icon: typeof Home }> = [
   { id: 'home', label: 'Home', icon: Home },
@@ -39,11 +66,11 @@ const navItems: Array<{ id: DashboardSection; label: string; icon: typeof Home }
   { id: 'profile', label: 'Profile', icon: User },
 ]
 
-const fallbackUser: DashboardUser = {
-  name: 'Player',
-  goal: 'Build interview confidence',
-  userType: 'candidate',
-  problems: ['communication', 'system-design', 'coding'],
+const iconMap: Record<string, typeof BookOpenCheck> = {
+  'book-open-check': BookOpenCheck,
+  'bar-chart-3': BarChart3,
+  brain: Brain,
+  'gamepad-2': Gamepad2,
 }
 
 function titleCase(value: string): string {
@@ -58,24 +85,37 @@ function titleCase(value: string): string {
 export default function Dashboard() {
   const router = useRouter()
   const { theme } = useTheme()
-  const [userData, setUserData] = useState<DashboardUser | null>(null)
+  const [dashboard, setDashboard] = useState<DashboardOverview | null>(null)
   const [activeSection, setActiveSection] = useState<DashboardSection>('home')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const userDataStr = localStorage.getItem('userOnboardingData')
+    const token = localStorage.getItem('authToken')
 
-    if (!userDataStr) {
-      setUserData(fallbackUser)
+    if (!token) {
+      router.replace('/')
       return
     }
 
-    try {
-      setUserData({ ...fallbackUser, ...(JSON.parse(userDataStr) as DashboardUser) })
-    } catch {
-      localStorage.removeItem('userOnboardingData')
-      setUserData(fallbackUser)
+    let mounted = true
+    apiRequest<DashboardOverview>('/api/dashboard/overview', { method: 'GET', token })
+      .then((payload) => {
+        if (mounted) setDashboard(payload)
+      })
+      .catch((requestError) => {
+        if (mounted) {
+          setError(requestError instanceof Error ? requestError.message : 'Failed to load dashboard')
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+
+    return () => {
+      mounted = false
     }
-  }, [])
+  }, [router])
 
   const colors = useMemo(() => {
     const isDark = theme === 'dark'
@@ -95,74 +135,133 @@ export default function Dashboard() {
     }
   }, [theme])
 
-  const user = userData ?? fallbackUser
-  const focusAreas = user.problems.length > 0 ? user.problems : fallbackUser.problems
-
   const handleLogout = (): void => {
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('authUser')
     localStorage.removeItem('userOnboardingData')
     router.push('/')
   }
 
+  if (loading) {
+    return createElement(
+      'main',
+      { className: 'grid min-h-screen place-items-center', style: { background: colors.background } },
+      createElement('p', { className: 'text-sm font-medium', style: { color: colors.muted } }, 'Loading dashboard...')
+    )
+  }
+
+  if (error || !dashboard) {
+    return createElement(
+      'main',
+      { className: 'grid min-h-screen place-items-center px-6', style: { background: colors.background } },
+      createElement(
+        'section',
+        { className: 'max-w-md rounded-[1.25rem] border p-6 text-center backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+        createElement('h1', { className: 'text-2xl font-semibold', style: { color: colors.text } }, 'Dashboard unavailable'),
+        createElement('p', { className: 'mt-3 text-sm leading-6', style: { color: colors.muted } }, error || 'Unable to load your dashboard data.'),
+        createElement('div', { className: 'mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center' },
+          createElement(Button, { type: 'button', className: 'h-10 rounded-[0.9rem]', onClick: () => router.refresh() }, 'Retry'),
+          createElement(Button, { type: 'button', className: 'h-10 rounded-[0.9rem]', variant: 'outline', onClick: handleLogout }, 'Logout')
+        )
+      )
+    )
+  }
+
+  const user = dashboard.user
+  const focusAreas = dashboard.focus_areas
+
   const renderStat = (icon: typeof Zap, label: string, value: string, tone = colors.primary) =>
-    createElement('div', { className: 'rounded-[1rem] border p-5 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+    createElement(
+      'div',
+      { className: 'rounded-[1rem] border p-5 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
       createElement('div', { className: 'mb-4 flex h-10 w-10 items-center justify-center rounded-[0.8rem]', style: { backgroundColor: colors.primarySoft, color: tone } }, createElement(icon, { size: 20 })),
       createElement('p', { className: 'text-sm', style: { color: colors.subtle } }, label),
       createElement('p', { className: 'mt-1 text-2xl font-semibold', style: { color: colors.text } }, value)
     )
 
   const renderHome = () =>
-    createElement('div', { className: 'space-y-6' },
-      createElement('section', { className: 'overflow-hidden rounded-[1.5rem] border p-6 backdrop-blur-xl lg:p-8', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-        createElement('div', { className: 'grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-center' },
-          createElement('div', null,
-            createElement('div', { className: 'mb-5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold', style: { backgroundColor: colors.primarySoft, color: colors.primary } },
+    createElement(
+      'div',
+      { className: 'space-y-6' },
+      createElement(
+        'section',
+        { className: 'overflow-hidden rounded-[1.5rem] border p-6 backdrop-blur-xl lg:p-8', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+        createElement(
+          'div',
+          { className: 'grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-center' },
+          createElement(
+            'div',
+            null,
+            createElement(
+              'div',
+              { className: 'mb-5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold', style: { backgroundColor: colors.primarySoft, color: colors.primary } },
               createElement(Sparkles, { size: 16 }),
               createElement('span', null, 'Today\'s prep room')
             ),
             createElement('h1', { className: 'max-w-3xl text-4xl font-semibold leading-tight lg:text-5xl', style: { color: colors.text } }, `Welcome back, ${user.name}`),
             createElement('p', { className: 'mt-4 max-w-2xl text-base leading-7 lg:text-lg', style: { color: colors.muted } }, 'Keep your practice focused with short games, clear feedback, and progress that is easy to scan.'),
-            createElement('div', { className: 'mt-7 flex flex-col gap-3 sm:flex-row' },
-              createElement(Button, { className: 'h-11 rounded-[0.9rem] px-5 text-sm font-semibold', type: 'button' }, createElement(Play, { size: 18 }), 'Start Practice'),
+            createElement(
+              'div',
+              { className: 'mt-7 flex flex-col gap-3 sm:flex-row' },
+              createElement(Button, { className: 'h-11 rounded-[0.9rem] px-5 text-sm font-semibold', type: 'button', onClick: () => setActiveSection('games') }, createElement(Play, { size: 18 }), 'Start Practice'),
               createElement(Button, { className: 'h-11 rounded-[0.9rem] px-5 text-sm font-semibold', variant: 'outline', type: 'button', onClick: () => setActiveSection('games') }, createElement(Gamepad2, { size: 18 }), 'View Games')
             )
           ),
-          createElement('div', { className: 'rounded-[1.25rem] border p-5', style: { backgroundColor: colors.soft, borderColor: colors.border } },
+          createElement(
+            'div',
+            { className: 'rounded-[1.25rem] border p-5', style: { backgroundColor: colors.soft, borderColor: colors.border } },
             createElement('p', { className: 'text-sm font-medium', style: { color: colors.muted } }, 'Current Goal'),
-            createElement('p', { className: 'mt-3 text-2xl font-semibold leading-snug', style: { color: colors.text } }, user.goal),
-            createElement('div', { className: 'mt-6 h-2 overflow-hidden rounded-full', style: { backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(36,23,16,0.1)' } },
-              createElement('div', { className: 'h-full w-[68%] rounded-full', style: { background: 'linear-gradient(90deg, #ff8a3d 0%, #ff4f00 100%)' } })
+            createElement('p', { className: 'mt-3 text-2xl font-semibold leading-snug', style: { color: colors.text } }, user.goal || 'No goal set'),
+            createElement(
+              'div',
+              { className: 'mt-6 h-2 overflow-hidden rounded-full', style: { backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(36,23,16,0.1)' } },
+              createElement('div', { className: 'h-full rounded-full', style: { width: `${dashboard.stats.weekly_progress}%`, background: 'linear-gradient(90deg, #ff8a3d 0%, #ff4f00 100%)' } })
             ),
-            createElement('p', { className: 'mt-3 text-sm', style: { color: colors.subtle } }, '68% weekly prep rhythm')
+            createElement('p', { className: 'mt-3 text-sm', style: { color: colors.subtle } }, `${dashboard.stats.weekly_progress}% weekly prep rhythm`)
           )
         )
       ),
-      createElement('div', { className: 'grid gap-4 md:grid-cols-3' },
-        renderStat(Flame, 'Streak', '5 days'),
-        renderStat(Medal, 'Arena Points', '1,240'),
-        renderStat(Target, 'Focus Areas', String(focusAreas.length))
+      createElement(
+        'div',
+        { className: 'grid gap-4 md:grid-cols-3' },
+        renderStat(Flame, 'Streak', dashboard.stats.streak_days > 0 ? `${dashboard.stats.streak_days} days` : 'No streak yet'),
+        renderStat(Medal, 'Arena Points', dashboard.stats.arena_points > 0 ? `${dashboard.stats.arena_points}` : 'No points yet'),
+        renderStat(Target, 'Focus Areas', dashboard.stats.focus_area_count > 0 ? `${dashboard.stats.focus_area_count}` : 'No focus areas')
       ),
-      createElement('section', { className: 'grid gap-5 lg:grid-cols-[0.95fr_1.05fr]' },
-        createElement('div', { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+      createElement(
+        'section',
+        { className: 'grid gap-5 lg:grid-cols-[0.95fr_1.05fr]' },
+        createElement(
+          'div',
+          { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
           createElement('h2', { className: 'text-xl font-semibold', style: { color: colors.text } }, 'Focus Board'),
-          createElement('div', { className: 'mt-5 flex flex-wrap gap-3' },
-            ...focusAreas.map((problem) =>
-              createElement('span', { key: problem, className: 'rounded-full border px-4 py-2 text-sm font-medium', style: { backgroundColor: colors.primarySoft, borderColor: 'rgba(255, 79, 0, 0.35)', color: colors.primary } }, titleCase(problem))
-            )
+          createElement(
+            'div',
+            { className: 'mt-5 flex flex-wrap gap-3' },
+            focusAreas.length > 0
+              ? focusAreas.map((problem) =>
+                  createElement('span', { key: problem, className: 'rounded-full border px-4 py-2 text-sm font-medium', style: { backgroundColor: colors.primarySoft, borderColor: 'rgba(255, 79, 0, 0.35)', color: colors.primary } }, titleCase(problem))
+                )
+              : createElement('span', { className: 'text-sm', style: { color: colors.muted } }, 'No focus areas recorded yet')
           )
         ),
-        createElement('div', { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+        createElement(
+          'div',
+          { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
           createElement('h2', { className: 'text-xl font-semibold', style: { color: colors.text } }, 'Next Session'),
-          createElement('div', { className: 'mt-5 space-y-4' },
-            [
-              ['Warm up', 'Answer 3 quick behavioral prompts'],
-              ['Practice', 'Play a timed role-specific interview game'],
-              ['Review', 'Check feedback and update your weak areas'],
-            ].map(([label, detail], index) =>
-              createElement('div', { key: label, className: 'flex gap-4 rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
+          createElement(
+            'div',
+            { className: 'mt-5 space-y-4' },
+            ...dashboard.next_session.map((step, index) =>
+              createElement(
+                'div',
+                { key: step.label, className: 'flex gap-4 rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
                 createElement('span', { className: 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold', style: { backgroundColor: colors.primary, color: '#fffefb' } }, String(index + 1)),
-                createElement('div', null,
-                  createElement('p', { className: 'font-semibold', style: { color: colors.text } }, label),
-                  createElement('p', { className: 'mt-1 text-sm', style: { color: colors.muted } }, detail)
+                createElement(
+                  'div',
+                  null,
+                  createElement('p', { className: 'font-semibold', style: { color: colors.text } }, step.label),
+                  createElement('p', { className: 'mt-1 text-sm', style: { color: colors.muted } }, step.detail)
                 )
               )
             )
@@ -172,82 +271,107 @@ export default function Dashboard() {
     )
 
   const renderGames = () =>
-    createElement('div', { className: 'grid gap-5 md:grid-cols-2 xl:grid-cols-4' },
-      [
-        { icon: BookOpenCheck, title: 'Coffee with Interview Arena', detail: 'Start with a calm conversational round built for warm-up practice.', meta: '10 min', route: '#' },
-        { icon: BarChart3, title: 'Salary Negotiator Poker', detail: 'Play negotiation hands and practice confident compensation conversations.', meta: '15 min', route: '/dashboard/game2' },
-        { icon: Brain, title: 'Articulate Master', detail: 'Sharpen clear answers, tighter structure, and polished interview delivery.', meta: '12 min', route: '/game3/session' },
-        { icon: Gamepad2, title: 'GOOGLY MASTER', detail: 'Read tricky questions, spot the trap, and lock in your confidence bet.', meta: '20 min', route: '/game4/session' },
-      ].map((game) =>
-        createElement('article', { key: game.title, className: 'rounded-[1.25rem] border p-6 transition-transform hover:-translate-y-1', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-          createElement('div', { className: 'mb-6 flex items-center justify-between' },
-            createElement('div', { className: 'flex h-12 w-12 items-center justify-center rounded-[1rem]', style: { backgroundColor: colors.primarySoft, color: colors.primary } }, createElement(game.icon, { size: 24 })),
+    createElement(
+      'div',
+      { className: 'grid gap-5 md:grid-cols-2 xl:grid-cols-4' },
+      ...dashboard.games.map((game) => {
+        const Icon = iconMap[game.icon] ?? Gamepad2
+        return createElement(
+          'article',
+          { key: game.title, className: 'rounded-[1.25rem] border p-6 transition-transform hover:-translate-y-1', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+          createElement(
+            'div',
+            { className: 'mb-6 flex items-center justify-between' },
+            createElement('div', { className: 'flex h-12 w-12 items-center justify-center rounded-[1rem]', style: { backgroundColor: colors.primarySoft, color: colors.primary } }, createElement(Icon, { size: 24 })),
             createElement('span', { className: 'rounded-full px-3 py-1 text-xs font-semibold', style: { backgroundColor: colors.soft, color: colors.muted } }, game.meta)
           ),
           createElement('h2', { className: 'text-xl font-semibold', style: { color: colors.text } }, game.title),
           createElement('p', { className: 'mt-3 min-h-12 text-sm leading-6', style: { color: colors.muted } }, game.detail),
-          createElement(Button, {
-            className: 'mt-6 h-10 w-full rounded-[0.9rem]',
-            type: 'button',
-            onClick: () => {
-              if (game.title === 'Coffee with Interview Arena') {
-                router.push('/dashboard/game1')
-              } else if (game.route !== '#') {
-                router.push(game.route)
-              }
-            }
-          }, createElement(Play, { size: 17 }), 'Play')
+          createElement(
+            Button,
+            {
+              className: 'mt-6 h-10 w-full rounded-[0.9rem]',
+              type: 'button',
+              onClick: () => router.push(game.route),
+            },
+            createElement(Play, { size: 17 }),
+            'Play'
+          )
         )
-      )
+      })
     )
 
   const renderLeaderboard = () =>
-    createElement('section', { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-      createElement('div', { className: 'mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-center' },
-        createElement('div', null,
+    createElement(
+      'section',
+      { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+      createElement(
+        'div',
+        { className: 'mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-center' },
+        createElement(
+          'div',
+          null,
           createElement('h2', { className: 'text-2xl font-semibold', style: { color: colors.text } }, 'Leaderboard'),
           createElement('p', { className: 'mt-1 text-sm', style: { color: colors.muted } }, 'Weekly Interview Arena standings')
         ),
-        createElement('span', { className: 'rounded-full px-4 py-2 text-sm font-semibold', style: { backgroundColor: colors.primarySoft, color: colors.primary } }, 'You are #8')
+        createElement('span', { className: 'rounded-full px-4 py-2 text-sm font-semibold', style: { backgroundColor: colors.primarySoft, color: colors.primary } }, `You are #${dashboard.profile.leaderboard_rank}`)
       ),
-      createElement('div', { className: 'space-y-3' },
-        [
-          ['1', 'Aarav Singh', '2,840'],
-          ['2', 'Maya Chen', '2,620'],
-          ['3', 'Noah Patel', '2,410'],
-          ['8', user.name, '1,240'],
-        ].map(([rank, name, points]) =>
-          createElement('div', { key: `${rank}-${name}`, className: 'flex items-center justify-between rounded-[1rem] border px-4 py-4', style: { backgroundColor: name === user.name ? colors.primarySoft : colors.soft, borderColor: name === user.name ? 'rgba(255, 79, 0, 0.35)' : colors.border } },
-            createElement('div', { className: 'flex items-center gap-4' },
-              createElement('span', { className: 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold', style: { backgroundColor: rank === '1' ? colors.primary : colors.panelStrong, color: rank === '1' ? '#fffefb' : colors.text } }, rank),
-              createElement('p', { className: 'font-semibold', style: { color: colors.text } }, name)
+      createElement(
+        'div',
+        { className: 'space-y-3' },
+        ...dashboard.leaderboard.map((row) =>
+          createElement(
+            'div',
+            {
+              key: `${row.rank}-${row.name}`,
+              className: 'flex items-center justify-between rounded-[1rem] border px-4 py-4',
+              style: {
+                backgroundColor: row.is_current_user ? colors.primarySoft : colors.soft,
+                borderColor: row.is_current_user ? 'rgba(255, 79, 0, 0.35)' : colors.border,
+              },
+            },
+            createElement(
+              'div',
+              { className: 'flex items-center gap-4' },
+              createElement('span', { className: 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold', style: { backgroundColor: row.rank === 1 ? colors.primary : colors.panelStrong, color: row.rank === 1 ? '#fffefb' : colors.text } }, String(row.rank)),
+              createElement('p', { className: 'font-semibold', style: { color: colors.text } }, row.name)
             ),
-            createElement('p', { className: 'font-semibold', style: { color: colors.primary } }, points)
+            createElement('p', { className: 'font-semibold', style: { color: colors.primary } }, `${row.points}`)
           )
         )
       )
     )
 
   const renderProfile = () =>
-    createElement('section', { className: 'grid gap-5 lg:grid-cols-[0.75fr_1.25fr]' },
-      createElement('div', { className: 'rounded-[1.25rem] border p-6 text-center', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+    createElement(
+      'section',
+      { className: 'grid gap-5 lg:grid-cols-[0.75fr_1.25fr]' },
+      createElement(
+        'div',
+        { className: 'rounded-[1.25rem] border p-6 text-center', style: { backgroundColor: colors.panel, borderColor: colors.border } },
         createElement('div', { className: 'mx-auto flex h-24 w-24 items-center justify-center rounded-[1.5rem] text-3xl font-semibold', style: { backgroundColor: colors.primary, color: '#fffefb' } }, user.name.charAt(0).toUpperCase()),
         createElement('h2', { className: 'mt-5 text-2xl font-semibold', style: { color: colors.text } }, user.name),
-        createElement('p', { className: 'mt-2 text-sm', style: { color: colors.muted } }, titleCase(user.userType)),
+        createElement('p', { className: 'mt-2 text-sm', style: { color: colors.muted } }, user.user_type ? titleCase(user.user_type) : 'Not set'),
         createElement(Button, { className: 'mt-6 h-10 rounded-[0.9rem]', variant: 'outline', type: 'button' }, createElement(Settings, { size: 17 }), 'Edit Profile')
       ),
-      createElement('div', { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+      createElement(
+        'div',
+        { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
         createElement('h2', { className: 'text-xl font-semibold', style: { color: colors.text } }, 'Profile Details'),
-        createElement('div', { className: 'mt-5 grid gap-4 sm:grid-cols-2' },
-          [
-            ['Goal', user.goal],
-            ['Background', titleCase(user.userType)],
-            ['Weekly Points', '1,240'],
-            ['Completed Games', '18'],
+        createElement(
+          'div',
+          { className: 'mt-5 grid gap-4 sm:grid-cols-2' },
+          ...[
+            ['Goal', user.goal || 'Not set'],
+            ['Background', user.user_type ? titleCase(user.user_type) : 'Not set'],
+            ['Weekly Points', dashboard.stats.arena_points > 0 ? `${dashboard.stats.arena_points}` : 'No points yet'],
+            ['Completed Games', dashboard.stats.completed_games > 0 ? `${dashboard.stats.completed_games}` : 'No games yet'],
           ].map(([label, value]) =>
-            createElement('div', { key: label, className: 'rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
+            createElement(
+              'div',
+              { key: label, className: 'rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
               createElement('p', { className: 'text-sm', style: { color: colors.subtle } }, label),
-              createElement('p', { className: 'mt-2 font-semibold', style: { color: colors.text } }, value)
+              createElement('p', { className: 'mt-2 font-semibold', style: { color: colors.text } }, value || 'Not set')
             )
           )
         )
@@ -264,48 +388,90 @@ export default function Dashboard() {
   return createElement(
     'main',
     { className: 'min-h-screen', style: { background: colors.background } },
-    createElement('div', { className: 'flex min-h-screen w-full' },
-      createElement('aside', { className: 'sticky top-0 hidden h-screen w-72 shrink-0 border-r p-5 lg:block', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-        createElement('div', { className: 'flex h-full flex-col' },
-          createElement('div', { className: 'flex items-center gap-3 px-2 py-3' },
+    createElement(
+      'div',
+      { className: 'flex min-h-screen w-full' },
+      createElement(
+        'aside',
+        { className: 'sticky top-0 hidden h-screen w-72 shrink-0 border-r p-5 lg:block', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+        createElement(
+          'div',
+          { className: 'flex h-full flex-col' },
+          createElement(
+            'div',
+            { className: 'flex items-center gap-3 px-2 py-3' },
             createElement('div', { className: 'flex h-10 w-10 items-center justify-center rounded-[0.85rem]', style: { backgroundColor: colors.primary, color: '#fffefb' } }, createElement(Zap, { size: 21 })),
-            createElement('div', null,
+            createElement(
+              'div',
+              null,
               createElement('p', { className: 'text-lg font-semibold', style: { color: colors.text } }, 'Interview Arena'),
               createElement('p', { className: 'text-xs', style: { color: colors.muted } }, 'Practice dashboard')
             )
           ),
-          createElement('nav', { className: 'mt-8 space-y-2' },
+          createElement(
+            'nav',
+            { className: 'mt-8 space-y-2' },
             ...navItems.map((item) => {
               const isActive = activeSection === item.id
-              return createElement('button', { key: item.id, className: 'flex w-full items-center gap-3 rounded-[0.9rem] px-4 py-3 text-left text-sm font-semibold transition-colors', style: { backgroundColor: isActive ? colors.primary : 'transparent', color: isActive ? '#fffefb' : colors.muted }, onClick: () => setActiveSection(item.id), type: 'button' },
+              return createElement(
+                'button',
+                {
+                  key: item.id,
+                  className: 'flex w-full items-center gap-3 rounded-[0.9rem] px-4 py-3 text-left text-sm font-semibold transition-colors',
+                  style: { backgroundColor: isActive ? colors.primary : 'transparent', color: isActive ? '#fffefb' : colors.muted },
+                  onClick: () => setActiveSection(item.id),
+                  type: 'button',
+                },
                 createElement(item.icon, { size: 19 }),
                 createElement('span', null, item.label)
               )
             })
           ),
-          createElement('div', { className: 'mt-auto rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
+          createElement(
+            'div',
+            { className: 'mt-auto rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
             createElement('p', { className: 'text-sm font-semibold', style: { color: colors.text } }, 'Ready for a round?'),
             createElement('p', { className: 'mt-1 text-xs leading-5', style: { color: colors.muted } }, 'Start with one quick game and review the feedback after.'),
             createElement(Button, { className: 'mt-4 h-9 w-full rounded-[0.85rem]', type: 'button', onClick: () => setActiveSection('games') }, 'Open Games')
           )
         )
       ),
-      createElement('div', { className: 'min-w-0 flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6' },
-        createElement('header', { className: 'mb-5 rounded-[1.25rem] border p-4 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
-          createElement('div', { className: 'flex flex-col gap-4 md:flex-row md:items-center md:justify-between' },
-            createElement('div', null,
+      createElement(
+        'div',
+        { className: 'min-w-0 flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6' },
+        createElement(
+          'header',
+          { className: 'mb-5 rounded-[1.25rem] border p-4 backdrop-blur-xl', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+          createElement(
+            'div',
+            { className: 'flex flex-col gap-4 md:flex-row md:items-center md:justify-between' },
+            createElement(
+              'div',
+              null,
               createElement('p', { className: 'text-sm font-medium', style: { color: colors.primary } }, titleCase(activeSection)),
               createElement('h1', { className: 'text-2xl font-semibold', style: { color: colors.text } }, navItems.find((item) => item.id === activeSection)?.label)
             ),
-            createElement('div', { className: 'flex items-center gap-3' },
+            createElement(
+              'div',
+              { className: 'flex items-center gap-3' },
               createElement('div', { className: 'hidden rounded-full px-4 py-2 text-sm font-semibold sm:block', style: { backgroundColor: colors.soft, color: colors.muted } }, user.name),
               createElement(Button, { className: 'h-10 rounded-[0.9rem]', variant: 'outline', onClick: handleLogout, type: 'button' }, createElement(LogOut, { size: 17 }), 'Logout')
             )
           ),
-          createElement('nav', { className: 'mt-4 grid grid-cols-4 gap-2 lg:hidden' },
+          createElement(
+            'nav',
+            { className: 'mt-4 grid grid-cols-4 gap-2 lg:hidden' },
             ...navItems.map((item) => {
               const isActive = activeSection === item.id
-              return createElement('button', { key: item.id, className: 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-[0.85rem] text-xs font-semibold', style: { backgroundColor: isActive ? colors.primary : colors.soft, color: isActive ? '#fffefb' : colors.muted }, onClick: () => setActiveSection(item.id), type: 'button' },
+              return createElement(
+                'button',
+                {
+                  key: item.id,
+                  className: 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-[0.85rem] text-xs font-semibold',
+                  style: { backgroundColor: isActive ? colors.primary : colors.soft, color: isActive ? '#fffefb' : colors.muted },
+                  onClick: () => setActiveSection(item.id),
+                  type: 'button',
+                },
                 createElement(item.icon, { size: 17 }),
                 createElement('span', null, item.label)
               )

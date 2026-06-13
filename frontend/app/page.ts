@@ -13,15 +13,13 @@ import { Footer } from '@/components/footer'
 import { AuthModal } from '@/components/auth-modal'
 import { OnboardingFlow, type OnboardingData } from '@/components/onboarding-flow'
 import { useTheme } from '@/app/theme-provider'
-import { type AuthUser } from '@/lib/auth'
+import { apiRequest } from '@/lib/auth'
 
 export default function Home() {
   const router = useRouter()
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false)
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false)
   const [mounted, setMounted] = useState<boolean>(false)
-  const [userName, setUserName] = useState<string>('')
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const { theme } = useTheme()
 
   useEffect(() => {
@@ -30,44 +28,46 @@ export default function Home() {
 
   const handleSignInClick = (): void => setIsAuthModalOpen(true)
   const handleCloseAuthModal = (): void => setIsAuthModalOpen(false)
-  const handleAuthSuccess = (userData: AuthUser): void => {
-    setUserName(userData.name)
-    setAuthUser(userData)
-    setIsOnboardingOpen(true)
-  }
+  const handleAuthSuccess = (): void => setIsOnboardingOpen(true)
 
-  const handleOnboardingComplete = (data: OnboardingData): void => {
-    const userOnboardingData = {
-      id: authUser?.id || '',
-      email: authUser?.email || '',
-      name: userName,
-      goal: data.goal,
-      userType: data.userType,
-      problems: data.problems,
-    }
-    try {
-      localStorage.setItem('userOnboardingData', JSON.stringify(userOnboardingData))
-    } catch (e) {
-      console.error('Failed to save userOnboardingData to localStorage:', e)
+  const handleOnboardingComplete = async (data: OnboardingData): Promise<void> => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      try {
+        await apiRequest('/api/dashboard/profile', {
+          method: 'PUT',
+          token,
+          body: {
+            goal: data.goal,
+            userType: data.userType,
+            problems: data.problems,
+          },
+        })
+      } catch (e) {
+        console.error('Failed to save onboarding data to backend:', e)
+      }
     }
     setIsOnboardingOpen(false)
     router.push('/dashboard')
   }
 
-  const handleOnboardingSkip = (): void => {
+  const handleOnboardingSkip = async (): Promise<void> => {
     setIsOnboardingOpen(false)
-    const userOnboardingData = {
-      id: authUser?.id || '',
-      email: authUser?.email || '',
-      name: userName,
-      goal: 'Not specified',
-      userType: 'Not specified',
-      problems: [],
-    }
-    try {
-      localStorage.setItem('userOnboardingData', JSON.stringify(userOnboardingData))
-    } catch (e) {
-      console.error('Failed to save userOnboardingData to localStorage:', e)
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      try {
+        await apiRequest('/api/dashboard/profile', {
+          method: 'PUT',
+          token,
+          body: {
+            goal: 'Not specified',
+            userType: 'Not specified',
+            problems: [],
+          },
+        })
+      } catch (e) {
+        console.error('Failed to save onboarding data to backend:', e)
+      }
     }
     router.push('/dashboard')
   }

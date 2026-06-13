@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { SessionState, GooglyQuestion, OptionState, RevealResult, LifelineType } from '../../lib/game4.types';
+import { apiRequest } from '@/lib/auth';
 
 interface Game4ContextValue {
   sessionId: string | null;
@@ -81,6 +82,7 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   const [usedLifelines, setUsedLifelines] = useState<Record<LifelineType, boolean>>({ '50_50': false, 'hint': false });
   const [revealResult, setRevealResult] = useState<RevealResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [weakCategories, setWeakCategories] = useState<string[]>([]);
 
   const totalRounds = mockQuestions.length;
 
@@ -108,6 +110,28 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
       }));
     }
   }, [sessionId, sessionState, currentRound, googlyRating, currentQuestion, usedLifelines]);
+
+  const recordProgress = async (payload: { pointsAwarded: number; summary: string; score: number; focusAreas: string[] }) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) return
+
+    try {
+      await apiRequest('/api/dashboard/activity', {
+        method: 'POST',
+        token,
+        body: {
+          gameKey: 'game4',
+          title: 'GOOGLY MASTER',
+          score: payload.score,
+          pointsAwarded: payload.pointsAwarded,
+          summary: payload.summary,
+          focusAreas: payload.focusAreas,
+        },
+      })
+    } catch (error) {
+      console.error('Failed to record game4 progress:', error)
+    }
+  }
 
   const loadQuestion = (round: number) => {
     if (round > totalRounds) {
@@ -187,6 +211,10 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
       });
       
       setGooglyRating(prev => Math.max(0, Math.min(100, prev + delta)));
+
+      if (!isCorrect) {
+        setWeakCategories(prev => Array.from(new Set([...prev, currentQuestion?.category || 'reasoning'])));
+      }
       
       if (currentQuestion?.type === 'mcq') {
         setOptionStates(prev => {
@@ -206,6 +234,12 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
     if (currentRound >= totalRounds) {
       setSessionState('game_over');
       sessionStorage.removeItem('g4_state');
+      void recordProgress({
+        pointsAwarded: revealResult?.totalXpAwarded || 0,
+        summary: revealResult?.playerInsight || 'GOOGLY MASTER session completed.',
+        score: googlyRating,
+        focusAreas: Array.from(new Set([...(weakCategories.length > 0 ? weakCategories : []), currentQuestion?.category || 'reasoning'])),
+      });
     } else {
       setCurrentRound(prev => prev + 1);
       loadQuestion(currentRound + 1);
