@@ -372,7 +372,7 @@ export default function Dashboard() {
             ...dashboard.next_session.map((step, index) =>
               createElement(
                 'div',
-                { key: step.label, className: 'flex gap-4 rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
+                { key: `${step.label}-${index}`, className: 'flex gap-4 rounded-[1rem] p-4', style: { backgroundColor: colors.soft } },
                 createElement('span', { className: 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold', style: { backgroundColor: colors.primary, color: '#fffefb' } }, String(index + 1)),
                 createElement(
                   'div',

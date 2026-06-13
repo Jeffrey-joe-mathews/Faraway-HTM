@@ -33,44 +33,11 @@ interface Game4ContextValue {
 
 const Game4Context = createContext<Game4ContextValue | undefined>(undefined);
 
-// The Demo Question Queue (3 Rounds)
-const mockQuestions: GooglyQuestion[] = [
-  {
-    id: 'q1', type: 'mcq', category: 'Databases', difficulty: 'medium',
-    questionText: "If you have a 10TB database and need to migrate it to a new schema with zero downtime, what is the most critical first step?",
-    options: [
-      { id: 'a', text: "Take a full backup and lock the tables." },
-      { id: 'b', text: "Create a dual-write mechanism." },
-      { id: 'c', text: "Setup logical replication to a new instance." },
-      { id: 'd', text: "Write a background script to update rows in batches." } // TRAP
-    ]
-  },
-  {
-    id: 'q2', type: 'mcq', category: 'Architecture', difficulty: 'hard',
-    questionText: "Your microservice is experiencing cascading failures due to downstream timeouts. Which pattern is the most dangerous to implement first?",
-    options: [
-      { id: 'a', text: "Circuit Breaker" },
-      { id: 'b', text: "Automatic Retries with exponential backoff" }, // TRAP
-      { id: 'c', text: "Rate Limiting" },
-      { id: 'd', text: "Bulkhead Pattern" }
-    ]
-  },
-  {
-    id: 'q3', type: 'mcq', category: 'System Design', difficulty: 'boss',
-    questionText: "The Final Googly: You are designing a globally distributed counter. A network partition occurs. Do you prioritize Availability or Consistency, and why does your choice actually guarantee neither?",
-    options: [
-      { id: 'a', text: "Availability, because users need to see a number." },
-      { id: 'b', text: "Consistency, because financial data requires it." },
-      { id: 'c', text: "Neither, CAP theorem forces a tradeoff that degrades both." },
-      { id: 'd', text: "CP systems fall back to AP to preserve uptime." } // TRAP
-    ]
-  }
-];
-
 export function Game4Provider({ children }: { children: React.ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>('lobby');
   const [currentRound, setCurrentRound] = useState(1);
+  const [totalRounds, setTotalRounds] = useState(1); // Now dynamic from API
   const [googlyRating, setGooglyRating] = useState(50);
   const [currentQuestion, setCurrentQuestion] = useState<GooglyQuestion | null>(null);
   const [confidenceBet, setConfidenceBet] = useState<1 | 2 | 3 | null>(null);
@@ -84,8 +51,7 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [weakCategories, setWeakCategories] = useState<string[]>([]);
 
-  const totalRounds = mockQuestions.length;
-
+  // Local Storage Persistence
   useEffect(() => {
     const saved = sessionStorage.getItem('g4_state');
     if (saved) {
@@ -95,6 +61,7 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
           setSessionId(parsed.sessionId);
           setSessionState(parsed.sessionState);
           setCurrentRound(parsed.currentRound);
+          setTotalRounds(parsed.totalRounds || 1);
           setGooglyRating(parsed.googlyRating);
           setCurrentQuestion(parsed.currentQuestion);
           setUsedLifelines(parsed.usedLifelines || { '50_50': false, 'hint': false });
@@ -106,14 +73,15 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (sessionId) {
       sessionStorage.setItem('g4_state', JSON.stringify({
-        sessionId, sessionState, currentRound, googlyRating, currentQuestion, usedLifelines
+        sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines
       }));
     }
-  }, [sessionId, sessionState, currentRound, googlyRating, currentQuestion, usedLifelines]);
+  }, [sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines]);
 
+  // Record progress to Next.js dashboard backend
   const recordProgress = async (payload: { pointsAwarded: number; summary: string; score: number; focusAreas: string[] }) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
-    if (!token) return
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+    if (!token) return;
 
     try {
       await apiRequest('/api/dashboard/activity', {
@@ -127,49 +95,73 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
           summary: payload.summary,
           focusAreas: payload.focusAreas,
         },
-      })
+      });
     } catch (error) {
-      console.error('Failed to record game4 progress:', error)
+      console.error('Failed to record game4 progress:', error);
     }
-  }
+  };
 
-  const loadQuestion = (round: number) => {
-    if (round > totalRounds) {
+  // 1. Fetch Question from Python Backend
+  const loadQuestion = async (round: number) => {
+    if (round > totalRounds && totalRounds > 1) {
       setSessionState('game_over');
       return;
     }
 
-    const nextQuestion = mockQuestions[round - 1];
-    
-    setCurrentQuestion(nextQuestion);
-    setConfidenceBet(null);
-    setSelectedOptionId(null);
-    setOpenAnswer('');
-    setHintText(null);
-    setRevealResult(null);
-    setTypewriterDone(false);
-    
-    const initialStates: Record<string, OptionState> = {};
-    nextQuestion.options?.forEach(opt => initialStates[opt.id] = 'default');
-    setOptionStates(initialStates);
-    
-    // Always go to playing state, skip the weird boss intro screen
-    setSessionState('playing');
+    try {
+      const response = await fetch(`http://localhost:5000/api/game4/question/${round}`);
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        setCurrentQuestion(result.data);
+        setConfidenceBet(null);
+        setSelectedOptionId(null);
+        setOpenAnswer('');
+        setHintText(null);
+        setRevealResult(null);
+        setTypewriterDone(false);
+        
+        const initialStates: Record<string, OptionState> = {};
+        result.data.options?.forEach((opt: any) => initialStates[opt.id] = 'default');
+        setOptionStates(initialStates);
+        
+        setSessionState('playing');
+      } else if (result.message === "Game Over") {
+        setSessionState('game_over');
+      }
+    } catch (error) {
+      console.error("Failed to load question:", error);
+    }
   };
 
-  const startGame = () => {
-    setSessionId(`g4_${Date.now()}`);
-    setGooglyRating(50);
-    setCurrentRound(1);
-    setUsedLifelines({ '50_50': false, 'hint': false });
-    loadQuestion(1);
+  // 2. Start Session from Python Backend
+  const startGame = async () => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/game4/start', { method: 'POST' });
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setSessionId(`g4_${Date.now()}`);
+        setGooglyRating(result.data.startingRating);
+        setTotalRounds(result.data.totalRounds);
+        setCurrentRound(1);
+        setUsedLifelines({ '50_50': false, 'hint': false });
+        await loadQuestion(1);
+      }
+    } catch (error) {
+      console.error("Start Game Error:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const selectOption = (id: string) => {
     if (sessionState !== 'playing' || !typewriterDone || optionStates[id] === 'eliminated') return;
     
     setSelectedOptionId(id);
-    setOptionStates(prev => {
+    // TS FIX: Explicitly type `prev`
+    setOptionStates((prev: Record<string, OptionState>) => {
       const next = { ...prev };
       Object.keys(next).forEach(k => {
         if (next[k] !== 'eliminated') next[k] = k === id ? 'selected' : 'default';
@@ -178,56 +170,101 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const useLifeline = (type: LifelineType) => {
-    if (usedLifelines[type]) return;
-    setUsedLifelines(prev => ({ ...prev, [type]: true }));
-    
-    if (type === '50_50' && currentQuestion?.options) {
-      setOptionStates(prev => ({ ...prev, 'a': 'eliminated', 'd': 'eliminated' }));
-    } else if (type === 'hint') {
-      setHintText("Don't fall for the obvious answer. Think about edge cases under heavy load.");
+  // 3. Process Lifelines with Python Backend
+  const useLifeline = async (type: LifelineType) => {
+    if (!currentQuestion || usedLifelines[type]) return;
+
+    try {
+      const response = await fetch('http://localhost:5000/api/game4/lifeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, questionId: currentQuestion.id })
+      });
+      
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        // TS FIX: Explicitly type `prev`
+        setUsedLifelines((prev: Record<LifelineType, boolean>) => ({ ...prev, [type]: true }));
+        
+        if (type === '50_50') {
+          // TS FIX: Explicitly type `prev`
+          setOptionStates((prev: Record<string, OptionState>) => {
+            const newState = { ...prev };
+            result.data.eliminated.forEach((id: string) => { newState[id] = 'eliminated'; });
+            return newState;
+          });
+        } else if (type === 'hint') {
+          setHintText(result.data.hintText);
+        }
+      }
+    } catch (error) {
+      console.error("Lifeline error:", error);
     }
   };
 
-  const submitAnswer = () => {
+  // 4. Submit Answer for AI Evaluation to Python Backend
+  const submitAnswer = async () => {
+    if (!currentQuestion || isSubmitting) return;
+    if (currentQuestion.type === 'mcq' && !selectedOptionId) return;
+    
     setIsSubmitting(true);
-    setTimeout(() => {
-      const isTrap = selectedOptionId === 'd' || selectedOptionId === 'b';
-      const isCorrect = selectedOptionId === 'c';
-      const bonus = confidenceBet === 3 && isCorrect ? 50 : 0;
-      const delta = isCorrect ? 15 : (isTrap ? -20 : -5);
-      
-      setRevealResult({
-        correctOptionId: 'c',
-        trapOptionId: selectedOptionId === 'b' ? 'b' : 'd', 
-        isCorrect,
-        isTrap,
-        trapExplanation: isTrap ? "You fell for the Googly! That choice ignores cascading failures." : "Good eye, you avoided the obvious trap.",
-        playerInsight: isCorrect ? "Excellent first-principles reasoning." : "Review distributed systems fallbacks.",
-        ratingDelta: delta,
-        newRating: Math.max(0, Math.min(100, googlyRating + delta)),
-        confidenceBonus: bonus,
-        totalXpAwarded: (isCorrect ? 100 : 10) + bonus
+
+    try {
+      const response = await fetch('http://localhost:5000/api/game4/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: currentQuestion.id,
+          selectedOptionId,
+          confidenceBet,
+          currentRating: googlyRating
+        })
       });
       
-      setGooglyRating(prev => Math.max(0, Math.min(100, prev + delta)));
+      const result = await response.json();
 
-      if (!isCorrect) {
-        setWeakCategories(prev => Array.from(new Set([...prev, currentQuestion?.category || 'reasoning'])));
-      }
-      
-      if (currentQuestion?.type === 'mcq') {
-        setOptionStates(prev => {
-          const res = { ...prev };
-          res['c'] = 'correct';
-          if (isTrap && selectedOptionId) res[selectedOptionId] = 'trap';
-          return res;
+      if (result.status === 'success') {
+        const evalData = result.data;
+        
+        setRevealResult({
+          correctOptionId: evalData.correctOptionId,
+          trapOptionId: evalData.trapOptionId,
+          isCorrect: evalData.isCorrect,
+          isTrap: evalData.isTrap,
+          trapExplanation: evalData.trapExplanation,
+          playerInsight: evalData.playerInsight,
+          ratingDelta: evalData.ratingDelta,
+          newRating: evalData.newRating,
+          confidenceBonus: evalData.confidenceBonus,
+          totalXpAwarded: evalData.totalXpAwarded
         });
+        
+        // TS FIX: Explicitly type `prev`
+        setGooglyRating((prev: number) => Math.max(0, Math.min(100, evalData.newRating)));
+
+        if (!evalData.isCorrect) {
+          // TS FIX: Explicitly type `prev`
+          setWeakCategories((prev: string[]) => Array.from(new Set([...prev, currentQuestion?.category || 'reasoning'])));
+        }
+        
+        if (currentQuestion.type === 'mcq') {
+          // TS FIX: Explicitly type `prev`
+          setOptionStates((prev: Record<string, OptionState>) => {
+            const res = { ...prev };
+            res[evalData.correctOptionId] = 'correct';
+            if (evalData.isTrap && selectedOptionId) res[selectedOptionId] = 'trap';
+            return res;
+          });
+        }
+        
+        setSessionState('revealing');
       }
-      
+    } catch (error) {
+      console.error("Evaluation error:", error);
+    } finally {
       setIsSubmitting(false);
-      setSessionState('revealing');
-    }, 1500);
+    }
   };
 
   const advanceToNextQuestion = () => {

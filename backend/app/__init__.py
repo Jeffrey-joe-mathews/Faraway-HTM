@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from app.extensions import jwt
 from app.routes.dashboard_routes import dashboard_bp
 from app.routes.auth_routes import auth_bp
+from app.routes.game4_routes import game4_bp
 
 
 def create_app() -> Flask:
@@ -34,6 +35,7 @@ def create_app() -> Flask:
     jwt.init_app(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(game4_bp)
 
     @app.get("/api/health")
     def health_check():
