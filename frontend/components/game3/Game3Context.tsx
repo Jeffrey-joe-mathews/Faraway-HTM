@@ -20,6 +20,8 @@ interface Game3ContextValue {
   results: FullResults | null;
   streak: number;
   livesRemaining: number;
+  xpAwarded: number | null;
+  badgesEarned: Array<{ name: string; icon: string; description: string }>;
   
   setInputMode: (mode: InputMode) => void;
   setAnswer: (text: string) => void;
@@ -28,6 +30,7 @@ interface Game3ContextValue {
   startGame: () => Promise<void>;
   advanceToNextCard: () => void;
   abandonGame: () => Promise<void>;
+  setBadgesEarned: (badges: Array<{ name: string; icon: string; description: string }>) => void;
 }
 
 const Game3Context = createContext<Game3ContextValue | undefined>(undefined);
@@ -49,6 +52,8 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
   const [streak, setStreak] = useState(0);
   const [livesRemaining, setLivesRemaining] = useState(3);
   const [cardHistory, setCardHistory] = useState<CardResult[]>([]);
+  const [xpAwarded, setXpAwarded] = useState<number | null>(null);
+  const [badgesEarned, setBadgesEarned] = useState<Array<{ name: string; icon: string; description: string }>>([]);
 
   const recordProgress = async (payload: {
     outcome: 'completed' | 'eliminated'
@@ -66,7 +71,7 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
     ))
 
     try {
-      await apiRequest('/api/dashboard/activity', {
+      const activityResult = await apiRequest<{ xpAwarded: number; badgesEarned: Array<{ name: string; icon: string; description: string }> }>('/api/dashboard/activity', {
         method: 'POST',
         token,
         suppressErrors: true,
@@ -79,8 +84,19 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
             ? 'Completed the articulation challenge and received evaluation feedback.'
             : 'Ended the articulation challenge early and recorded improvement areas.',
           focusAreas: weakAreas.length > 0 ? weakAreas : ['clarity', 'structured-answers'],
+          gameplayMetadata: {
+            filler_slayer_complete: payload.history.every(h => h.clarity >= 24),
+            polished_speaker_win: payload.finalScore >= 80
+          }
         },
       })
+      
+      if (activityResult) {
+        setXpAwarded(activityResult.xpAwarded);
+        if (activityResult.badgesEarned && activityResult.badgesEarned.length > 0) {
+          setBadgesEarned(activityResult.badgesEarned);
+        }
+      }
     } catch (error) {
       console.error('Failed to record game3 progress:', error)
     }
@@ -271,7 +287,8 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
       sessionConfig, sessionId, sessionState, currentCard, currentRound,
       inputMode, answer, audioBlob, timeRemaining, timerActive,
       evaluationResult, isEvaluating, results, streak, livesRemaining,
-      setInputMode, setAnswer, setAudioBlob, submitAnswer, startGame, advanceToNextCard, abandonGame
+      xpAwarded, badgesEarned,
+      setInputMode, setAnswer, setAudioBlob, submitAnswer, startGame, advanceToNextCard, abandonGame, setBadgesEarned
     }}>
       {children}
     </Game3Context.Provider>

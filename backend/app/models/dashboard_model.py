@@ -28,6 +28,20 @@ def serialize_dashboard_profile(profile: dict) -> dict:
         "last_activity_at": profile.get("last_activity_at").isoformat() if profile.get("last_activity_at") else None,
         "focus_areas": profile.get("focus_areas", []),
         "recent_sessions": profile.get("recent_sessions", []),
+        # New gamification fields
+        "xp": int(profile.get("xp", 0)),
+        "level": int(profile.get("level", 1)),
+        "badges": list(profile.get("badges", [])),
+        "badge_metrics": dict(profile.get("badge_metrics", {
+            "never_settle_count": 0,
+            "filler_slayer_count": 0,
+            "bluff_master_count": 0,
+            "iron_nerve_count": 0,
+            "speed_demon_count": 0,
+            "polished_speaker_count": 0,
+            "googly_guru_count": 0,
+            "games_completed_count": 0
+        }))
     }
 
 
@@ -91,6 +105,20 @@ def upsert_profile(user_id: str, profile_data: dict):
         "recent_sessions": profile_data.get("recent_sessions", existing.get("recent_sessions", [])),
         "last_activity_at": profile_data.get("last_activity_at", existing.get("last_activity_at")),
         "updated_at": now,
+        # New gamification fields
+        "xp": _int(profile_data.get("xp"), existing.get("xp", 0) or 0),
+        "level": _int(profile_data.get("level"), existing.get("level", 1) or 1),
+        "badges": list(profile_data.get("badges") if profile_data.get("badges") is not None else existing.get("badges", [])),
+        "badge_metrics": dict(profile_data.get("badge_metrics") if profile_data.get("badge_metrics") is not None else existing.get("badge_metrics", {
+            "never_settle_count": 0,
+            "filler_slayer_count": 0,
+            "bluff_master_count": 0,
+            "iron_nerve_count": 0,
+            "speed_demon_count": 0,
+            "polished_speaker_count": 0,
+            "googly_guru_count": 0,
+            "games_completed_count": 0
+        }))
     }
 
     if not existing:
@@ -144,6 +172,79 @@ def record_game_session(user_id: str, session_data: dict):
 
     recent_sessions = find_recent_sessions(user_id, limit=5)
 
+    # Accumulate XP and determine new Level
+    xp_awarded = int(session_data.get("xp_awarded", 0) or 0)
+    new_xp = int(existing.get("xp", 0) or 0) + xp_awarded
+    new_level = min(10, 1 + (new_xp // 500))
+
+    # Badge metrics update
+    badge_metrics = dict(existing.get("badge_metrics", {
+        "never_settle_count": 0,
+        "filler_slayer_count": 0,
+        "bluff_master_count": 0,
+        "iron_nerve_count": 0,
+        "speed_demon_count": 0,
+        "polished_speaker_count": 0,
+        "googly_guru_count": 0,
+        "games_completed_count": 0
+    }))
+    
+    # Increment total games completed across all types
+    badge_metrics["games_completed_count"] = badge_metrics.get("games_completed_count", 0) + 1
+
+    # Extract updates from metadata
+    meta = session_data.get("gameplay_metadata", {})
+    game_key = session_data.get("game_key", "")
+
+    # Salary Negotiator Poker
+    if game_key == "game2":
+        if meta.get("never_settle_win"):
+            badge_metrics["never_settle_count"] = badge_metrics.get("never_settle_count", 0) + 1
+        if meta.get("bluff_master_count"):
+            badge_metrics["bluff_master_count"] = badge_metrics.get("bluff_master_count", 0) + int(meta["bluff_master_count"])
+    # Coffee Game
+    elif game_key == "game1":
+        if meta.get("iron_nerve_complete"):
+            badge_metrics["iron_nerve_count"] = badge_metrics.get("iron_nerve_count", 0) + 1
+    # Articulate Master
+    elif game_key == "game3":
+        if meta.get("filler_slayer_complete"):
+            badge_metrics["filler_slayer_count"] = badge_metrics.get("filler_slayer_count", 0) + 1
+        if meta.get("polished_speaker_win"):
+            badge_metrics["polished_speaker_count"] = badge_metrics.get("polished_speaker_count", 0) + 1
+    # Googly Master
+    elif game_key == "game4":
+        if meta.get("speed_demon_count"):
+            badge_metrics["speed_demon_count"] = badge_metrics.get("speed_demon_count", 0) + int(meta["speed_demon_count"])
+        if meta.get("googly_guru_win"):
+            badge_metrics["googly_guru_count"] = badge_metrics.get("googly_guru_count", 0) + 1
+
+    # Check for newly unlocked badges
+    BADGES_CONFIG = [
+        {"name": "Never Settle", "icon": "💰", "description": "Win Salary Poker above market average 3 times", "metric": "never_settle_count", "threshold": 3},
+        {"name": "Filler Slayer", "icon": "⚔️", "description": "Complete Articulate Master with zero fillers 3 times", "metric": "filler_slayer_count", "threshold": 3},
+        {"name": "Bluff Master", "icon": "🎭", "description": "Walk Away worked in Salary Poker 5 times", "metric": "bluff_master_count", "threshold": 5},
+        {"name": "Iron Nerve", "icon": "🛡️", "description": "Complete Coffee Game 3 times", "metric": "iron_nerve_count", "threshold": 3},
+        {"name": "Speed Demon", "icon": "⚡", "description": "Answer Googly Master question in under 5 seconds 5 times", "metric": "speed_demon_count", "threshold": 5},
+        {"name": "Polished Speaker", "icon": "🎙️", "description": "Articulate Master score above 80 5 times", "metric": "polished_speaker_count", "threshold": 5},
+        {"name": "Googly Guru", "icon": "🧠", "description": "Googly Master score above 80 3 times", "metric": "googly_guru_count", "threshold": 3},
+        {"name": "Consistency King", "icon": "👑", "description": "Complete a total of 15 games across all types", "metric": "games_completed_count", "threshold": 15}
+    ]
+
+    current_badges = list(existing.get("badges", []))
+    newly_earned = []
+
+    for b in BADGES_CONFIG:
+        if b["name"] not in current_badges:
+            val = badge_metrics.get(b["metric"], 0)
+            if val >= b["threshold"]:
+                current_badges.append(b["name"])
+                newly_earned.append({
+                    "name": b["name"],
+                    "icon": b["icon"],
+                    "description": b["description"]
+                })
+
     profile_update = {
         "arena_points": arena_points,
         "completed_games": completed_games,
@@ -154,6 +255,11 @@ def record_game_session(user_id: str, session_data: dict):
         "recent_sessions": recent_sessions,
         "last_activity_at": now,
         "updated_at": now,
+        # Gamification fields update
+        "xp": new_xp,
+        "level": new_level,
+        "badges": current_badges,
+        "badge_metrics": badge_metrics
     }
 
     if not existing:
@@ -169,4 +275,9 @@ def record_game_session(user_id: str, session_data: dict):
     else:
         _dashboard_collection().update_one({"user_id": user_id}, {"$set": profile_update}, upsert=True)
 
-    return find_profile_by_user_id(user_id)
+    # Attach temporarily to returned document for controller's usage
+    updated_profile = find_profile_by_user_id(user_id)
+    updated_profile["_xp_awarded"] = xp_awarded
+    updated_profile["_newly_earned_badges"] = newly_earned
+
+    return updated_profile

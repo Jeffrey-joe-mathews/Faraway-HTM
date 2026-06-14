@@ -54,8 +54,9 @@ def activity():
             "score": payload.get("score", 0),
             "points_awarded": payload.get("pointsAwarded", payload.get("points_awarded", 0)),
             "focus_areas": payload.get("focusAreas", payload.get("focus_areas", [])),
+            "gameplayMetadata": payload.get("gameplayMetadata", {}),
         },
     )
     if not result:
         return jsonify({"message": "Unable to record activity"}), 400
-    return jsonify({"profile": result}), 200
+    return jsonify(result), 200

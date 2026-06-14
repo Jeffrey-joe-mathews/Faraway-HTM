@@ -16,6 +16,7 @@ import { useTheme } from '@/app/theme-provider'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/auth'
 import './game2-animations.css'
+import BadgeEarnedOverlay from '@/components/BadgeEarnedOverlay'
 
 interface RoundHistory {
   round: number
@@ -333,6 +334,9 @@ export default function Game2Page() {
   const [salaryDelta, setSalaryDelta] = useState<number>(0)
   const [finalSalary, setFinalSalary] = useState<number>(0)
   const [warningMessage, setWarningMessage] = useState<string>('')
+  const [xpAwarded, setXpAwarded] = useState<number | null>(null)
+  const [badgesEarned, setBadgesEarned] = useState<Array<{ name: string; icon: string; description: string }>>([])
+  const [hasUsedMarketData, setHasUsedMarketData] = useState<boolean>(false)
 
   const playSound = (soundType: 'card' | 'good' | 'bad') => {
     try {
@@ -494,6 +498,10 @@ export default function Game2Page() {
     setPlayingCard(true)
     playSound('card')
 
+    if (selectedCardType === 'justify' && (justificationText.toLowerCase().includes('market') || justificationText.toLowerCase().includes('data'))) {
+      setHasUsedMarketData(true)
+    }
+
     setTimeout(async () => {
       setLoading(true)
       try {
@@ -552,9 +560,12 @@ export default function Game2Page() {
         }
 
         const token = localStorage.getItem('authToken')
-        if (token) {
+        if (token && data.isGameOver) {
           try {
-            await apiRequest('/api/dashboard/activity', {
+            const counteredFirst = history.some(h => h.round === 1 && h.moveType === 'counter') || selectedCardType === 'counter'
+            const walkAwayCount = history.filter(h => h.moveType === 'walk' && !h.paused).length + (selectedCardType === 'walk' && !data.isPaused ? 1 : 0)
+            
+            const activityResult = await apiRequest<{ xpAwarded: number; badgesEarned: Array<{ name: string; icon: string; description: string }> }>('/api/dashboard/activity', {
               method: 'POST',
               token,
               suppressErrors: true,
@@ -567,8 +578,23 @@ export default function Game2Page() {
                 focusAreas: data.verdict === 'perfect_win' || data.verdict === 'win'
                   ? ['negotiation']
                   : ['salary-strategy', 'market-research'],
+                gameplayMetadata: {
+                  countered_first: counteredFirst,
+                  used_market_data: hasUsedMarketData || (selectedCardType === 'justify' && (justificationText.toLowerCase().includes('market') || justificationText.toLowerCase().includes('data'))),
+                  bluff_master_count: walkAwayCount,
+                  never_settle_win: (data.verdict === 'win' || data.verdict === 'perfect_win') && data.hrCounterOffer > marketAverage,
+                  perfect_win: data.verdict === 'perfect_win',
+                  lost: data.verdict === 'lose' || data.verdict === 'fail'
+                }
               },
             })
+            
+            if (activityResult) {
+              setXpAwarded(activityResult.xpAwarded)
+              if (activityResult.badgesEarned && activityResult.badgesEarned.length > 0) {
+                setBadgesEarned(activityResult.badgesEarned)
+              }
+            }
           } catch (activityError) {
             console.error('Failed to record game2 progress:', activityError)
           }
@@ -632,6 +658,9 @@ export default function Game2Page() {
     setSalaryDelta(0)
     setFinalSalary(0)
     setWarningMessage('')
+    setXpAwarded(null)
+    setBadgesEarned([])
+    setHasUsedMarketData(false)
     setPhase('setup')
   }
 
@@ -1035,6 +1064,9 @@ export default function Game2Page() {
               createElement('p', { style: { color: colors.text } }, feedback),
               salaryDelta !== 0 && createElement('p', { className: 'mt-3 font-semibold text-green-500' },
                 `Total gain: ${formatRupeeWords(salaryDelta)} / year`
+              ),
+              xpAwarded !== null && createElement('div', { className: 'mt-4 px-3 py-1 bg-green-500/10 border border-green-500/20 text-green-500 rounded-full font-bold text-xs inline-block' },
+                `+${xpAwarded} XP Earned`
               )
             ),
             createElement('div', { className: 'flex gap-3' },
@@ -1086,7 +1118,11 @@ export default function Game2Page() {
       ),
       phase === 'setup' && renderSetup(),
       phase === 'gameplay' && renderGameplay(),
-      phase === 'post-session' && renderPostSession()
+      phase === 'post-session' && renderPostSession(),
+      badgesEarned.length > 0 && createElement(BadgeEarnedOverlay, {
+        badges: badgesEarned,
+        onClose: () => setBadgesEarned([])
+      })
     )
   )
 }

@@ -35,6 +35,8 @@ export interface RevealResult {
   playerInsight: string;
   ratingDelta: number;
   newRating: number;
-  confidenceBonus: number;
-  totalXpAwarded: number;
+  confidenceBonus?: number;
+  totalXpAwarded?: number;
+  score?: number;
+  idealResponse?: string;
 }

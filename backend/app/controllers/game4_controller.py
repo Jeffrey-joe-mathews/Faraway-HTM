@@ -1,42 +1,50 @@
-from flask import jsonify
+from flask import jsonify, request
 from app.services import game4_service
+from app.models.dashboard_model import find_profile_by_user_id
 
-def start_session():
+def start_session(user_id):
     try:
-        # In a real app, you'd save this to MongoDB. For the demo, we return the config.
-        session_data = game4_service.initialize_game()
+        profile = find_profile_by_user_id(user_id) or {}
+        level = profile.get("level", 1)
+        session_data = game4_service.initialize_game(level)
         return jsonify({"status": "success", "data": session_data}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-def get_question_for_round(round_num):
+def get_question_for_round(user_id, round_num):
     try:
-        question = game4_service.fetch_question(round_num)
+        profile = find_profile_by_user_id(user_id) or {}
+        level = profile.get("level", 1)
+        seen_ids = request.args.get('seen', '').split(',')
+        seen_ids = [s.strip() for s in seen_ids if s.strip()]
+        
+        question = game4_service.fetch_question_for_level(level, round_num, seen_ids)
         if not question:
             return jsonify({"status": "error", "message": "Game Over"}), 404
         return jsonify({"status": "success", "data": question}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-def evaluate_player_answer(data):
+def evaluate_player_answer(user_id, data):
     question_id = data.get('questionId')
     selected_option = data.get('selectedOptionId')
     confidence_bet = data.get('confidenceBet')
     current_rating = data.get('currentRating', 50)
+    open_answer = data.get('openAnswer', '')
 
-    if not all([question_id, selected_option, confidence_bet]):
+    if not question_id or confidence_bet is None:
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
     try:
         # Pass to the AI Service
         result = game4_service.evaluate_with_agent(
-            question_id, selected_option, confidence_bet, current_rating
+            question_id, selected_option, open_answer, confidence_bet, current_rating
         )
         return jsonify({"status": "success", "data": result}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-def process_lifeline(data):
+def process_lifeline(user_id, data):
     lifeline_type = data.get('type')  # '50_50' or 'hint'
     question_id = data.get('questionId')
 

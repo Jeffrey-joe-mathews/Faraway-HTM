@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGame3 } from '../../../components/game3/Game3Context';
@@ -7,6 +5,7 @@ import { ConceptCard } from '../../../components/game3/ConceptCard';
 import { CountdownRing } from '../../../components/game3/CountdownRing';
 import { ScoreMeter } from '../../../components/game3/ScoreMeter';
 import { Button } from '../../../components/ui/button';
+import BadgeEarnedOverlay from '@/components/BadgeEarnedOverlay';
 
 export default function SessionPage() {
   const router = useRouter();
@@ -14,7 +13,8 @@ export default function SessionPage() {
     sessionConfig, sessionState, currentCard, currentRound, 
     timeRemaining, timerActive, inputMode, setInputMode, 
     answer, setAnswer, submitAnswer, evaluationResult, 
-    advanceToNextCard, isEvaluating, livesRemaining, abandonGame, startGame
+    advanceToNextCard, isEvaluating, livesRemaining, abandonGame, startGame,
+    xpAwarded, badgesEarned, results, setBadgesEarned
   } = useGame3();
 
   const [isRecording, setIsRecording] = useState(false);
@@ -195,11 +195,10 @@ export default function SessionPage() {
               className="w-full h-12 rounded-[0.9rem] font-bold text-base"
               onClick={() => {
                 playSound('click');
-                if (currentRound >= sessionConfig.totalRounds) router.push('/dashboard');
-                else advanceToNextCard();
+                advanceToNextCard();
               }}
             >
-              {currentRound >= sessionConfig.totalRounds ? 'Finish Game' : 'Next Card →'}
+              {currentRound >= sessionConfig.totalRounds ? 'Finish & View Results' : 'Next Card →'}
             </Button>
           </div>
         )}
@@ -234,42 +233,84 @@ export default function SessionPage() {
         </div>
       )}
 
-      {sessionState === 'game_over' && livesRemaining <= 0 && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in px-4">
-          <div className="bg-background border border-border rounded-[1.5rem] p-8 max-w-sm w-full text-center shadow-2xl scale-100 transition-transform">
-            
-            <div className="w-24 h-24 bg-destructive/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--destructive)" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="15" y1="9" x2="9" y2="15"/>
-                <line x1="9" y1="9" x2="15" y2="15"/>
-              </svg>
+      {sessionState === 'game_over' && results && (
+        <div className="fixed inset-0 bg-background/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="max-w-2xl w-full bg-card border border-border rounded-[2rem] p-6 sm:p-8 shadow-2xl relative animate-scale-up">
+            {/* Header */}
+            <div className="text-center mb-6">
+              <span className={`text-5xl mb-3 inline-block ${results.outcome === 'completed' ? 'animate-bounce' : ''}`}>
+                {results.outcome === 'completed' ? '🏆' : '💀'}
+              </span>
+              <h2 className={`text-3xl font-black uppercase tracking-wider mb-2 ${results.outcome === 'completed' ? 'text-primary' : 'text-destructive'}`}>
+                {results.outcome === 'completed' ? 'Assessment Completed' : 'Session Terminated'}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {results.outcome === 'completed' 
+                  ? 'Excellent work! The interviewer has graded your articulation performance.' 
+                  : 'You ran out of lives. Keep practicing to master these concepts!'}
+              </p>
             </div>
-            
-            <h2 className="text-4xl font-extrabold text-destructive mb-3 uppercase tracking-wider">
-              Game Over
-            </h2>
-            <p className="text-foreground text-lg font-medium mb-2">
-              The interviewer disconnected.
-            </p>
-            <p className="text-muted-foreground text-sm mb-8">
-              You lost all 3 lives. Brush up on your concepts and try again!
-            </p>
-            
-            <Button 
-              size="lg" 
-              className="w-full h-12 rounded-[0.9rem] font-bold" 
-              onClick={() => {
-                playSound('click');
-                abandonGame(); 
-                router.push('/dashboard'); 
-              }}
-            >
-              Return to Dashboard
-            </Button>
-            
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-muted p-4 rounded-2xl border border-border text-center">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Overall Rating</span>
+                <p className="text-4xl font-black text-foreground">{results.finalScore}/100</p>
+              </div>
+              <div className="bg-muted p-4 rounded-2xl border border-border text-center flex flex-col justify-center items-center">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">XP Earned</span>
+                <p className="text-4xl font-black text-green-500">+{results.totalXp} XP</p>
+              </div>
+            </div>
+
+            {/* Average Scores Breakdown */}
+            <div className="bg-muted/50 border border-border rounded-2xl p-4 sm:p-6 mb-6">
+              <h3 className="font-extrabold text-foreground text-sm uppercase tracking-wider mb-4">Core Dimensions</h3>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <ScoreMeter label="Clarity" score={Math.round(results.cardBreakdown.reduce((acc, c) => acc + c.clarity, 0) / Math.max(results.cardBreakdown.length, 1))} />
+                <ScoreMeter label="Structure" score={Math.round(results.cardBreakdown.reduce((acc, c) => acc + c.structure, 0) / Math.max(results.cardBreakdown.length, 1))} />
+                <ScoreMeter label="Depth" score={Math.round(results.cardBreakdown.reduce((acc, c) => acc + c.depth, 0) / Math.max(results.cardBreakdown.length, 1))} />
+                <ScoreMeter label="Brevity" score={Math.round(results.cardBreakdown.reduce((acc, c) => acc + c.brevity, 0) / Math.max(results.cardBreakdown.length, 1))} />
+              </div>
+            </div>
+
+            {/* General Feedback / Insights */}
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl mb-6">
+              <h4 className="font-extrabold text-primary text-xs mb-1 uppercase tracking-wide">AI Panel Feedback</h4>
+              <p className="text-sm text-foreground leading-relaxed">{results.agentSummary.overall}</p>
+            </div>
+
+            {/* Cards Breakdown List */}
+            <div className="mb-6 space-y-2 max-h-40 overflow-y-auto pr-1">
+              <h4 className="font-extrabold text-foreground text-xs uppercase tracking-wide mb-2">Question Breakdown</h4>
+              {results.cardBreakdown.map((res, index) => (
+                <div key={index} className="flex justify-between items-center p-3 bg-muted/30 border border-border rounded-xl">
+                  <div>
+                    <span className="text-[10px] font-bold text-primary block">{res.card.category.toUpperCase()}</span>
+                    <span className="text-sm font-medium text-foreground">{res.card.title}</span>
+                  </div>
+                  <span className={`text-sm font-bold ${res.totalScore >= 70 ? 'text-green-500' : 'text-destructive'}`}>
+                    {res.totalScore}/100
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Buttons */}
+            <div className="grid grid-cols-2 gap-4">
+              <Button size="lg" className="h-12 rounded-[0.9rem] font-bold text-base" onClick={() => { playSound('click'); startGame(); }}>
+                Play Again
+              </Button>
+              <Button variant="outline" size="lg" className="h-12 rounded-[0.9rem] font-bold text-base" onClick={() => { playSound('click'); abandonGame(); router.push('/dashboard'); }}>
+                Dashboard
+              </Button>
+            </div>
           </div>
         </div>
+      )}
+
+      {badgesEarned.length > 0 && (
+        <BadgeEarnedOverlay badges={badgesEarned} onClose={() => setBadgesEarned([])} />
       )}
 
     </div>

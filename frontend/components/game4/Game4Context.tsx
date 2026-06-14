@@ -20,6 +20,14 @@ interface Game4ContextValue {
   usedLifelines: Record<LifelineType, boolean>;
   revealResult: RevealResult | null;
   isSubmitting: boolean;
+  timerSeconds: number;
+  winsCount: number;
+  consecutiveCorrect: number;
+  showLevelUpAnimation: boolean;
+  isListening: boolean;
+  seenQuestionIds: string[];
+  pendingLevelUp: boolean;
+  setPendingLevelUp: (pending: boolean) => void;
   setConfidenceBet: (bet: 1 | 2 | 3) => void;
   selectOption: (id: string) => void;
   setOpenAnswer: (text: string) => void;
@@ -29,6 +37,8 @@ interface Game4ContextValue {
   startGame: () => void;
   advanceToNextQuestion: () => void;
   abandonGame: () => void;
+  startListening: () => void;
+  setShowLevelUpAnimation: (show: boolean) => void;
 }
 
 const Game4Context = createContext<Game4ContextValue | undefined>(undefined);
@@ -37,7 +47,7 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>('lobby');
   const [currentRound, setCurrentRound] = useState(1);
-  const [totalRounds, setTotalRounds] = useState(1); // Now dynamic from API
+  const [totalRounds, setTotalRounds] = useState(3);
   const [googlyRating, setGooglyRating] = useState(50);
   const [currentQuestion, setCurrentQuestion] = useState<GooglyQuestion | null>(null);
   const [confidenceBet, setConfidenceBet] = useState<1 | 2 | 3 | null>(null);
@@ -51,6 +61,30 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [weakCategories, setWeakCategories] = useState<string[]>([]);
 
+  // New gamification / timer states
+  const [timerSeconds, setTimerSeconds] = useState(30);
+  const [winsCount, setWinsCount] = useState(0);
+  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0);
+  const [showLevelUpAnimation, setShowLevelUpAnimation] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [seenQuestionIds, setSeenQuestionIds] = useState<string[]>([]);
+  const [roundStartTime, setRoundStartTime] = useState<number | null>(null);
+  const [under10sCount, setUnder10sCount] = useState(0);
+  const [under5sCount, setUnder5sCount] = useState(0);
+  const [pendingLevelUp, setPendingLevelUp] = useState(false);
+
+  // Helper to fetch authorization headers
+  const getAuthHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
   // Local Storage Persistence
   useEffect(() => {
     const saved = sessionStorage.getItem('g4_state');
@@ -61,10 +95,15 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
           setSessionId(parsed.sessionId);
           setSessionState(parsed.sessionState);
           setCurrentRound(parsed.currentRound);
-          setTotalRounds(parsed.totalRounds || 1);
+          setTotalRounds(parsed.totalRounds || 3);
           setGooglyRating(parsed.googlyRating);
           setCurrentQuestion(parsed.currentQuestion);
           setUsedLifelines(parsed.usedLifelines || { '50_50': false, 'hint': false });
+          setSeenQuestionIds(parsed.seenQuestionIds || []);
+          setWinsCount(parsed.winsCount || 0);
+          setConsecutiveCorrect(parsed.consecutiveCorrect || 0);
+          setUnder10sCount(parsed.under10sCount || 0);
+          setUnder5sCount(parsed.under5sCount || 0);
         }
       } catch (e) { console.error("Failed to parse session", e); }
     }
@@ -73,10 +112,63 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (sessionId) {
       sessionStorage.setItem('g4_state', JSON.stringify({
-        sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines
+        sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines,
+        seenQuestionIds, winsCount, consecutiveCorrect, under10sCount, under5sCount
       }));
     }
-  }, [sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines]);
+  }, [sessionId, sessionState, currentRound, totalRounds, googlyRating, currentQuestion, usedLifelines, seenQuestionIds, winsCount, consecutiveCorrect, under10sCount, under5sCount]);
+
+  // Timer Effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (sessionState === 'playing' && typewriterDone && timerSeconds > 0) {
+      interval = setInterval(() => {
+        setTimerSeconds(t => t - 1);
+      }, 1000);
+    } else if (sessionState === 'playing' && typewriterDone && timerSeconds === 0) {
+      // Auto-submit blank/selected option when timer runs out
+      submitAnswer();
+    }
+    return () => clearInterval(interval);
+  }, [sessionState, typewriterDone, timerSeconds]);
+
+  // Track round start time when question is ready
+  useEffect(() => {
+    if (sessionState === 'playing' && typewriterDone) {
+      setRoundStartTime(Date.now());
+      setTimerSeconds(30);
+    }
+  }, [sessionState, typewriterDone]);
+
+  // Speech-to-Text handler
+  const startListening = () => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+        recognition.onresult = (event: any) => {
+          const text = event.results[0][0].transcript;
+          setOpenAnswer(prev => prev + (prev ? ' ' : '') + text);
+        };
+        recognition.onerror = (e: any) => {
+          console.error("Speech recognition error:", e);
+          setIsListening(false);
+        };
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+        recognition.start();
+      } else {
+        alert("Speech recognition is not supported in this browser.");
+      }
+    }
+  };
 
   // Record progress to Next.js dashboard backend
   const recordProgress = async (payload: { pointsAwarded: number; summary: string; score: number; focusAreas: string[] }) => {
@@ -87,14 +179,20 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
       await apiRequest('/api/dashboard/activity', {
         method: 'POST',
         token,
-      suppressErrors: true,
-      body: {
+        suppressErrors: true,
+        body: {
           gameKey: 'game4',
           title: 'GOOGLY MASTER',
           score: payload.score,
           pointsAwarded: payload.pointsAwarded,
           summary: payload.summary,
           focusAreas: payload.focusAreas,
+          gameplayMetadata: {
+            under10s_count: under10sCount,
+            speed_demon_count: under5sCount,
+            googly_guru_win: payload.score >= 80,
+            three_in_a_row: consecutiveCorrect >= 3
+          }
         },
       });
     } catch (error) {
@@ -103,27 +201,33 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   };
 
   // 1. Fetch Question from Python Backend
-  const loadQuestion = async (round: number) => {
-    if (round > totalRounds && totalRounds > 1) {
+  const loadQuestion = async (round: number, customSeenIds?: string[]) => {
+    if (round > totalRounds) {
       setSessionState('game_over');
       return;
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/game4/question/${round}`);
+      const querySeen = (customSeenIds || seenQuestionIds).join(',');
+      const response = await fetch(`http://localhost:5000/api/game4/question/${round}?seen=${querySeen}`, {
+        headers: getAuthHeaders()
+      });
       const result = await response.json();
 
       if (result.status === 'success') {
-        setCurrentQuestion(result.data);
+        const question = result.data;
+        setCurrentQuestion(question);
+        setSeenQuestionIds(prev => Array.from(new Set([...prev, question.id])));
         setConfidenceBet(null);
         setSelectedOptionId(null);
         setOpenAnswer('');
         setHintText(null);
         setRevealResult(null);
         setTypewriterDone(false);
+        setTimerSeconds(30);
         
         const initialStates: Record<string, OptionState> = {};
-        result.data.options?.forEach((opt: any) => initialStates[opt.id] = 'default');
+        question.options?.forEach((opt: any) => initialStates[opt.id] = 'default');
         setOptionStates(initialStates);
         
         setSessionState('playing');
@@ -139,7 +243,10 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   const startGame = async () => {
     setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:5000/api/game4/start', { method: 'POST' });
+      const response = await fetch('http://localhost:5000/api/game4/start', {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
       const result = await response.json();
       
       if (result.status === 'success') {
@@ -148,7 +255,13 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
         setTotalRounds(result.data.totalRounds);
         setCurrentRound(1);
         setUsedLifelines({ '50_50': false, 'hint': false });
-        await loadQuestion(1);
+        setSeenQuestionIds([]);
+        setWinsCount(0);
+        setConsecutiveCorrect(0);
+        setUnder10sCount(0);
+        setUnder5sCount(0);
+        setPendingLevelUp(false);
+        await loadQuestion(1, []);
       }
     } catch (error) {
       console.error("Start Game Error:", error);
@@ -161,7 +274,6 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
     if (sessionState !== 'playing' || !typewriterDone || optionStates[id] === 'eliminated') return;
     
     setSelectedOptionId(id);
-    // TS FIX: Explicitly type `prev`
     setOptionStates((prev: Record<string, OptionState>) => {
       const next = { ...prev };
       Object.keys(next).forEach(k => {
@@ -178,18 +290,16 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('http://localhost:5000/api/game4/lifeline', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ type, questionId: currentQuestion.id })
       });
       
       const result = await response.json();
 
       if (result.status === 'success') {
-        // TS FIX: Explicitly type `prev`
         setUsedLifelines((prev: Record<LifelineType, boolean>) => ({ ...prev, [type]: true }));
         
         if (type === '50_50') {
-          // TS FIX: Explicitly type `prev`
           setOptionStates((prev: Record<string, OptionState>) => {
             const newState = { ...prev };
             result.data.eliminated.forEach((id: string) => { newState[id] = 'eliminated'; });
@@ -207,18 +317,27 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
   // 4. Submit Answer for AI Evaluation to Python Backend
   const submitAnswer = async () => {
     if (!currentQuestion || isSubmitting) return;
-    if (currentQuestion.type === 'mcq' && !selectedOptionId) return;
+    if (currentQuestion.type === 'mcq' && !selectedOptionId && timerSeconds > 0) return;
+    if (currentQuestion.type === 'open' && !openAnswer && timerSeconds > 0) return;
     
     setIsSubmitting(true);
+
+    // Calculate response speed
+    const now = Date.now();
+    const timeTaken = roundStartTime ? (now - roundStartTime) / 1000 : 999;
+    
+    if (timeTaken < 10) setUnder10sCount(c => c + 1);
+    if (timeTaken < 5) setUnder5sCount(c => c + 1);
 
     try {
       const response = await fetch('http://localhost:5000/api/game4/evaluate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           questionId: currentQuestion.id,
           selectedOptionId,
-          confidenceBet,
+          openAnswer,
+          confidenceBet: confidenceBet || 1, // Fallback if timer runs out
           currentRating: googlyRating
         })
       });
@@ -238,19 +357,29 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
           ratingDelta: evalData.ratingDelta,
           newRating: evalData.newRating,
           confidenceBonus: evalData.confidenceBonus,
-          totalXpAwarded: evalData.totalXpAwarded
+          totalXpAwarded: evalData.totalXpAwarded,
+          score: evalData.score,
+          idealResponse: evalData.idealResponse
         });
         
-        // TS FIX: Explicitly type `prev`
         setGooglyRating((prev: number) => Math.max(0, Math.min(100, evalData.newRating)));
 
         if (!evalData.isCorrect) {
-          // TS FIX: Explicitly type `prev`
           setWeakCategories((prev: string[]) => Array.from(new Set([...prev, currentQuestion?.category || 'reasoning'])));
+          setConsecutiveCorrect(0);
+        } else {
+          // Increment wins
+          const nextWins = winsCount + 1;
+          setWinsCount(nextWins);
+          setConsecutiveCorrect(c => c + 1);
+          
+          // If they reached 3 wins (correct answers), flag for level-up animation when advancing!
+          if (nextWins === 3) {
+            setPendingLevelUp(true);
+          }
         }
         
         if (currentQuestion.type === 'mcq') {
-          // TS FIX: Explicitly type `prev`
           setOptionStates((prev: Record<string, OptionState>) => {
             const res = { ...prev };
             res[evalData.correctOptionId] = 'correct';
@@ -292,9 +421,12 @@ export function Game4Provider({ children }: { children: React.ReactNode }) {
     <Game4Context.Provider value={{
       sessionId, sessionState, currentQuestion, currentRound, totalRounds, googlyRating,
       confidenceBet, selectedOptionId, openAnswer, optionStates, typewriterDone,
-      hintText, usedLifelines, revealResult, isSubmitting,
+      hintText, usedLifelines, revealResult, isSubmitting, timerSeconds, winsCount,
+      consecutiveCorrect, showLevelUpAnimation, isListening, seenQuestionIds,
+      pendingLevelUp, setPendingLevelUp,
       setConfidenceBet, selectOption, setOpenAnswer, setTypewriterDone,
-      useLifeline, submitAnswer, startGame, advanceToNextQuestion, abandonGame
+      useLifeline, submitAnswer, startGame, advanceToNextQuestion, abandonGame,
+      startListening, setShowLevelUpAnimation
     }}>
       {children}
     </Game4Context.Provider>

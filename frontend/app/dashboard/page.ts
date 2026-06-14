@@ -57,6 +57,8 @@ type DashboardOverview = {
     rank: number
     name: string
     points: number
+    xp: number
+    level: number
     is_current_user?: boolean
   }>
   profile: {
@@ -69,6 +71,9 @@ type DashboardOverview = {
     streak_days: number
     weekly_progress: number
     leaderboard_rank: number
+    xp: number
+    level: number
+    badges: string[]
   }
 }
 
@@ -326,15 +331,34 @@ export default function Dashboard() {
           ),
           createElement(
             'div',
-            { className: 'rounded-[1.25rem] border p-5', style: { backgroundColor: colors.soft, borderColor: colors.border } },
-            createElement('p', { className: 'text-sm font-medium', style: { color: colors.muted } }, 'Current Goal'),
-            createElement('p', { className: 'mt-3 text-2xl font-semibold leading-snug', style: { color: colors.text } }, user.goal || 'No goal set'),
+            { className: 'space-y-4' },
             createElement(
               'div',
-              { className: 'mt-6 h-2 overflow-hidden rounded-full', style: { backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(36,23,16,0.1)' } },
-              createElement('div', { className: 'h-full rounded-full', style: { width: `${dashboard.stats.weekly_progress}%`, background: 'linear-gradient(90deg, #ff8a3d 0%, #ff4f00 100%)' } })
+              { className: 'rounded-[1.25rem] border p-5', style: { backgroundColor: colors.soft, borderColor: colors.border } },
+              createElement('p', { className: 'text-sm font-medium', style: { color: colors.muted } }, 'Current Goal'),
+              createElement('p', { className: 'mt-3 text-2xl font-semibold leading-snug', style: { color: colors.text } }, user.goal || 'No goal set'),
+              createElement(
+                'div',
+                { className: 'mt-6 h-2 overflow-hidden rounded-full', style: { backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(36,23,16,0.1)' } },
+                createElement('div', { className: 'h-full rounded-full', style: { width: `${dashboard.stats.weekly_progress}%`, background: 'linear-gradient(90deg, #ff8a3d 0%, #ff4f00 100%)' } })
+              ),
+              createElement('p', { className: 'mt-3 text-sm', style: { color: colors.subtle } }, `${dashboard.stats.weekly_progress}% weekly prep rhythm`)
             ),
-            createElement('p', { className: 'mt-3 text-sm', style: { color: colors.subtle } }, `${dashboard.stats.weekly_progress}% weekly prep rhythm`)
+            createElement(
+              'div',
+              { className: 'rounded-[1.25rem] border p-5', style: { backgroundColor: colors.soft, borderColor: colors.border } },
+              createElement('div', { className: 'flex justify-between items-center' },
+                createElement('p', { className: 'text-sm font-medium', style: { color: colors.muted } }, 'Interview Arena Level'),
+                createElement('span', { className: 'px-2.5 py-0.5 text-xs font-bold bg-primary text-white rounded-full shadow-sm' }, `LVL ${dashboard.profile.level || 1}`)
+              ),
+              createElement('p', { className: 'mt-2 text-2xl font-bold', style: { color: colors.text } }, `${(dashboard.profile.xp || 0) % 500} / 500 XP`),
+              createElement(
+                'div',
+                { className: 'mt-3 h-2.5 overflow-hidden rounded-full', style: { backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(36,23,16,0.1)' } },
+                createElement('div', { className: 'h-full rounded-full', style: { width: `${(((dashboard.profile.xp || 0) % 500) / 500) * 100}%`, background: 'linear-gradient(90deg, #ff8a3d 0%, #ff4f00 100%)' } })
+              ),
+              createElement('p', { className: 'mt-2 text-xs', style: { color: colors.subtle } }, `${500 - ((dashboard.profile.xp || 0) % 500)} XP to next level`)
+            )
           )
         )
       ),
@@ -347,7 +371,7 @@ export default function Dashboard() {
       ),
       createElement(
         'section',
-        { className: 'grid gap-5 lg:grid-cols-[0.95fr_1.05fr]' },
+        { className: 'grid gap-5 lg:grid-cols-[1fr_1.1fr_0.9fr]' },
         createElement(
           'div',
           { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
@@ -360,6 +384,42 @@ export default function Dashboard() {
                   createElement('span', { key: problem, className: 'rounded-full border px-4 py-2 text-sm font-medium', style: { backgroundColor: colors.primarySoft, borderColor: 'rgba(255, 79, 0, 0.35)', color: colors.primary } }, titleCase(problem))
                 )
               : createElement('span', { className: 'text-sm', style: { color: colors.muted } }, 'No focus areas recorded yet')
+          )
+        ),
+        createElement(
+          'div',
+          { className: 'rounded-[1.25rem] border p-6', style: { backgroundColor: colors.panel, borderColor: colors.border } },
+          createElement('h2', { className: 'text-xl font-semibold', style: { color: colors.text } }, 'Badges Collection'),
+          createElement(
+            'div',
+            { className: 'grid grid-cols-4 gap-3 mt-5' },
+            ...[
+              { name: 'Never Settle', icon: '💰', description: 'Win Salary Poker above average 3x' },
+              { name: 'Filler Slayer', icon: '⚔️', description: 'Complete Articulate Master with 0 fillers 3x' },
+              { name: 'Bluff Master', icon: '🎭', description: 'Walk Away worked 5 times in Salary Poker' },
+              { name: 'Iron Nerve', icon: '🛡️', description: 'Complete Coffee Game 3 times' },
+              { name: 'Speed Demon', icon: '⚡', description: 'Answer Googly Master under 5s 5x' },
+              { name: 'Polished Speaker', icon: '🎙️', description: 'Articulate Master score > 80 5x' },
+              { name: 'Googly Guru', icon: '🧠', description: 'Googly Master score > 80 3x' },
+              { name: 'Consistency King', icon: '👑', description: 'Complete a total of 15 games' },
+            ].map((b) => {
+              const isEarned = dashboard.profile.badges?.includes(b.name);
+              return createElement(
+                'div',
+                {
+                  key: b.name,
+                  title: `${b.name}: ${b.description}`,
+                  className: 'flex flex-col items-center justify-center p-2 rounded-xl border transition-all hover:scale-105 select-none cursor-help',
+                  style: {
+                    backgroundColor: isEarned ? colors.primarySoft : colors.soft,
+                    borderColor: isEarned ? 'rgba(255, 79, 0, 0.3)' : colors.border,
+                    opacity: isEarned ? 1 : 0.35,
+                  }
+                },
+                createElement('span', { className: 'text-2xl mb-1' }, b.icon),
+                createElement('span', { className: 'text-[9px] font-extrabold text-center truncate w-full', style: { color: colors.text } }, b.name)
+              );
+            })
           )
         ),
         createElement(
@@ -470,9 +530,18 @@ export default function Dashboard() {
               'div',
               { className: 'flex items-center gap-4' },
               createElement('span', { className: 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold', style: { backgroundColor: row.rank === 1 ? colors.primary : colors.panelStrong, color: row.rank === 1 ? '#fffefb' : colors.text } }, String(row.rank)),
-              createElement('p', { className: 'font-semibold', style: { color: colors.text } }, row.name)
+              createElement(
+                'div',
+                null,
+                createElement(
+                  'div',
+                  { className: 'flex items-center gap-2' },
+                  createElement('p', { className: 'font-semibold', style: { color: colors.text } }, row.name),
+                  createElement('span', { className: 'rounded px-1.5 py-0.5 text-[10px] font-bold border shadow-sm', style: { backgroundColor: colors.soft, borderColor: colors.border, color: colors.muted } }, `Lvl ${row.level || 1}`)
+                )
+              )
             ),
-            createElement('p', { className: 'font-semibold', style: { color: colors.primary } }, `${row.points}`)
+            createElement('p', { className: 'font-semibold', style: { color: colors.primary } }, `${row.xp || 0} XP`)
           )
         )
       )
@@ -507,7 +576,7 @@ export default function Dashboard() {
                 createElement('label', { className: 'mb-2 block text-sm font-medium', style: { color: colors.subtle } }, 'Name'),
                 createElement('input', {
                   value: profileDraft.name,
-                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, name: e.target.value })),
+                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, name: (e.target as HTMLInputElement).value })),
                   className: 'h-11 w-full rounded-[0.9rem] border bg-transparent px-4 text-sm outline-none',
                   style: { borderColor: colors.border, color: colors.text },
                 })
@@ -516,7 +585,7 @@ export default function Dashboard() {
                 createElement('label', { className: 'mb-2 block text-sm font-medium', style: { color: colors.subtle } }, 'Goal'),
                 createElement('textarea', {
                   value: profileDraft.goal,
-                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, goal: e.target.value })),
+                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, goal: (e.target as HTMLTextAreaElement).value })),
                   className: 'min-h-24 w-full rounded-[0.9rem] border bg-transparent px-4 py-3 text-sm outline-none',
                   style: { borderColor: colors.border, color: colors.text },
                 })
@@ -525,7 +594,7 @@ export default function Dashboard() {
                 createElement('label', { className: 'mb-2 block text-sm font-medium', style: { color: colors.subtle } }, 'Background'),
                 createElement('input', {
                   value: profileDraft.userType,
-                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, userType: e.target.value })),
+                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, userType: (e.target as HTMLInputElement).value })),
                   className: 'h-11 w-full rounded-[0.9rem] border bg-transparent px-4 text-sm outline-none',
                   style: { borderColor: colors.border, color: colors.text },
                 })
@@ -534,7 +603,7 @@ export default function Dashboard() {
                 createElement('label', { className: 'mb-2 block text-sm font-medium', style: { color: colors.subtle } }, 'Focus Areas'),
                 createElement('input', {
                   value: profileDraft.focusAreas,
-                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, focusAreas: e.target.value })),
+                  onChange: (e) => setProfileDraft((prev) => ({ ...prev, focusAreas: (e.target as HTMLInputElement).value })),
                   placeholder: 'communication, system-design, confidence',
                   className: 'h-11 w-full rounded-[0.9rem] border bg-transparent px-4 text-sm outline-none',
                   style: { borderColor: colors.border, color: colors.text },
@@ -553,6 +622,8 @@ export default function Dashboard() {
                 ['Background', user.user_type ? titleCase(user.user_type) : 'Not set'],
                 ['Weekly Points', dashboard.stats.arena_points > 0 ? `${dashboard.stats.arena_points}` : 'No points yet'],
                 ['Completed Games', dashboard.stats.completed_games > 0 ? `${dashboard.stats.completed_games}` : 'No games yet'],
+                ['Interview Arena Level', `Level ${dashboard.profile.level || 1}`],
+                ['Total Experience', `${dashboard.profile.xp || 0} XP`],
               ].map(([label, value]) =>
                 createElement(
                   'div',

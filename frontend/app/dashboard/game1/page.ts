@@ -23,6 +23,7 @@ import {
 import { useTheme } from '@/app/theme-provider'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/auth'
+import BadgeEarnedOverlay from '@/components/BadgeEarnedOverlay'
 
 const INTRO_DURATION_MS = 10000
 
@@ -136,6 +137,8 @@ export default function Game1Page() {
   const [verdictLetter, setVerdictLetter] = useState<string>('')
   const [finalReadinessScore, setFinalReadinessScore] = useState<number>(0)
   const [animatedScore, setAnimatedScore] = useState<number>(0)
+  const [xpAwarded, setXpAwarded] = useState<number | null>(null)
+  const [badgesEarned, setBadgesEarned] = useState<Array<{ name: string; icon: string; description: string }>>([])
 
   // Refs for Timers
   const prepIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -481,7 +484,7 @@ export default function Game1Page() {
       const token = localStorage.getItem('authToken')
       if (token) {
         try {
-          await apiRequest('/api/dashboard/activity', {
+          const activityResult = await apiRequest<{ xpAwarded: number; badgesEarned: Array<{ name: string; icon: string; description: string }> }>('/api/dashboard/activity', {
             method: 'POST',
             token,
             suppressErrors: true,
@@ -492,8 +495,20 @@ export default function Game1Page() {
               pointsAwarded: data.finalReadinessScore,
               summary: data.verdictLetter?.split('\n').slice(0, 3).join(' ') || 'Interview prep completed.',
               focusAreas: buildFocusAreas(totalFillerWords, avgLength, validAnswersCount, data.verdict),
+              gameplayMetadata: {
+                iron_nerve_complete: true,
+                zero_fillers_opening: answers.find(a => a.segmentId === 1)?.fillerWordCount === 0,
+                passed_resume_dive: answers.some(a => a.segmentId === 2 && a.transcript.trim().length > 0),
+                verdict: data.verdict === 'clear' ? 'Clear' : data.verdict === 'borderline' ? 'Borderline' : 'Reject'
+              }
             },
           })
+          if (activityResult) {
+            setXpAwarded(activityResult.xpAwarded)
+            if (activityResult.badgesEarned && activityResult.badgesEarned.length > 0) {
+              setBadgesEarned(activityResult.badgesEarned)
+            }
+          }
         } catch (activityError) {
           console.error('Failed to record game1 progress:', activityError)
         }
@@ -558,6 +573,8 @@ export default function Game1Page() {
     setVerdictLetter('')
     setFinalReadinessScore(0)
     setAnimatedScore(0)
+    setXpAwarded(null)
+    setBadgesEarned([])
     setPhase('setup')
   }
 
@@ -866,7 +883,10 @@ export default function Game1Page() {
             createElement('div', { className: 'relative mt-4 flex items-center justify-center h-28 w-28 rounded-full border-4', style: { borderColor: colors.primary, backgroundColor: colors.soft } },
               createElement('span', { className: 'text-3xl font-extrabold', style: { color: colors.text } }, `${animatedScore}%`)
             ),
-            createElement('p', { className: 'text-[11px] mt-4', style: { color: colors.muted } }, 'Based on communication clarity & word fluency')
+            createElement('p', { className: 'text-[11px] mt-4', style: { color: colors.muted } }, 'Based on communication clarity & word fluency'),
+            xpAwarded !== null && createElement('div', { className: 'mt-4 px-3 py-1.5 bg-green-500/10 border border-green-500/20 text-green-500 rounded-full font-bold text-xs inline-block' },
+              `+${xpAwarded} XP Earned`
+            )
           ),
 
           // Verdict details & letter
@@ -995,8 +1015,11 @@ export default function Game1Page() {
       // Conditional Phase Rendering
       phase === 'setup' && renderSetup(),
       phase === 'gameplay' && renderGameplay(),
-      phase === 'post-session' && renderPostSession()
+      phase === 'post-session' && renderPostSession(),
+      badgesEarned.length > 0 && createElement(BadgeEarnedOverlay, {
+        badges: badgesEarned,
+        onClose: () => setBadgesEarned([])
+      })
     )
   )
 }
-
