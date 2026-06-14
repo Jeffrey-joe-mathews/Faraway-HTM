@@ -151,6 +151,33 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
     setIsEvaluating(true);
     setSessionState('evaluating');
 
+    if (!answer.trim() && !audioBlob) {
+      const newEvaluation: EvaluationResult = {
+        clarity: 0, structure: 0, depth: 0, brevity: 0,
+        totalScore: 0,
+        feedback: "Time expired before an answer was provided.",
+        xpAwarded: 0,
+        lifeConsumed: true,
+        livesRemaining: livesRemaining - 1,
+        streak: 0
+      };
+
+      setStreak(0);
+      setLivesRemaining(newEvaluation.livesRemaining);
+      setEvaluationResult(newEvaluation);
+
+      const nextHistory = [...cardHistory, { ...newEvaluation, card: currentCard! }];
+      setCardHistory(nextHistory);
+
+      if (newEvaluation.livesRemaining <= 0) {
+        generateFinalResults('eliminated', nextHistory);
+      } else {
+        setSessionState('life_lost');
+      }
+      setIsEvaluating(false);
+      return;
+    }
+
     try {
       let response;
 
