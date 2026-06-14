@@ -85,9 +85,21 @@ export default function GooglyMasterSession() {
       <main className="max-w-3xl w-full mx-auto flex-1 flex flex-col">
         <div className={`bg-background border ${isBoss ? 'border-destructive shadow-lg shadow-destructive/20' : 'border-border shadow-sm'} rounded-[1.25rem] p-8 mb-8 relative animate-slide-up`}>
           {isBoss && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-destructive text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">Boss Round</div>}
-          <span className="text-xs font-bold uppercase tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full mb-4 inline-block">
-            {currentQuestion.category}
-          </span>
+          
+          <div className="flex gap-2 mb-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">
+              {currentQuestion.category}
+            </span>
+            <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
+              currentQuestion.difficulty === 'easy' ? 'text-green-500 bg-green-500/10' :
+              currentQuestion.difficulty === 'medium' ? 'text-yellow-500 bg-yellow-500/10' :
+              currentQuestion.difficulty === 'hard' ? 'text-orange-500 bg-orange-500/10' :
+              'text-destructive bg-destructive/10'
+            }`}>
+              {currentQuestion.difficulty}
+            </span>
+          </div>
+
           <h2 className="text-2xl font-semibold text-foreground leading-relaxed min-h-[120px]">
             {displayedText}
             {!isComplete && <span className="inline-block w-2 h-6 bg-primary ml-1 animate-pulse" />}
