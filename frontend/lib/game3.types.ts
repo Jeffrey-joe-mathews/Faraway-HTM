@@ -26,6 +26,14 @@ export interface EvaluationResult {
   lifeConsumed: boolean;
   livesRemaining: number;
   streak: number;
+  transcript?: string;
+  weak_filler?: string;
+  improve?: string;
+  better_line?: string;
+  filler_penalty?: number;
+  fluency_score?: number;
+  structure_score?: number;
+  content_score?: number;
 }
 
 export interface CardResult extends EvaluationResult {

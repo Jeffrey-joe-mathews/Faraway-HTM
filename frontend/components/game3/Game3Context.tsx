@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { Game3Config, SessionState, ConceptCard, InputMode, EvaluationResult, FullResults, CardResult } from '../../lib/game3.types';
-import { apiRequest } from '@/lib/auth';
+import { apiRequest, getBackendBaseUrl } from '@/lib/auth';
 
 interface Game3ContextValue {
   sessionConfig: Game3Config | null;
@@ -22,6 +22,11 @@ interface Game3ContextValue {
   livesRemaining: number;
   xpAwarded: number | null;
   badgesEarned: Array<{ name: string; icon: string; description: string }>;
+  selectedLevel: 'EASY' | 'MEDIUM' | 'HARD' | 'GOD';
+  setSelectedLevel: (level: 'EASY' | 'MEDIUM' | 'HARD' | 'GOD') => void;
+  warmupDrill: { instruction: string; drill_sentence: string; focus: string } | null;
+  setWarmupDrill: (drill: any) => void;
+  fetchWarmupDrill: () => Promise<void>;
   
   setInputMode: (mode: InputMode) => void;
   setAnswer: (text: string) => void;
@@ -54,6 +59,94 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
   const [cardHistory, setCardHistory] = useState<CardResult[]>([]);
   const [xpAwarded, setXpAwarded] = useState<number | null>(null);
   const [badgesEarned, setBadgesEarned] = useState<Array<{ name: string; icon: string; description: string }>>([]);
+  const [selectedLevelState, setSelectedLevelState] = useState<'EASY' | 'MEDIUM' | 'HARD' | 'GOD'>('EASY');
+  const [warmupDrill, setWarmupDrill] = useState<{ instruction: string; drill_sentence: string; focus: string } | null>(null);
+
+  // Load level from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedLevel = localStorage.getItem('game3_level') as 'EASY' | 'MEDIUM' | 'HARD' | 'GOD';
+      if (savedLevel && ['EASY', 'MEDIUM', 'HARD', 'GOD'].includes(savedLevel)) {
+        setSelectedLevelState(savedLevel);
+      }
+    }
+  }, []);
+
+  const selectedLevel = selectedLevelState;
+
+  const setSelectedLevel = (level: 'EASY' | 'MEDIUM' | 'HARD' | 'GOD') => {
+    setSelectedLevelState(level);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('game3_level', level);
+    }
+  };
+
+  const getSeenCardIds = (): string[] => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('game3_seen_ids');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return [];
+  };
+
+  const getSeenTopicTitles = (): string[] => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('game3_seen_topics');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return [];
+  };
+
+  const markCardAsSeen = (id: string, title: string) => {
+    if (typeof window !== 'undefined') {
+      const seenIds = getSeenCardIds();
+      if (!seenIds.includes(id)) {
+        seenIds.push(id);
+        localStorage.setItem('game3_seen_ids', JSON.stringify(seenIds));
+      }
+      const seenTitles = getSeenTopicTitles();
+      if (!seenTitles.includes(title)) {
+        seenTitles.push(title);
+        localStorage.setItem('game3_seen_topics', JSON.stringify(seenTitles));
+      }
+    }
+  };
+
+  const fetchWarmupDrill = async () => {
+    let fingerprint = { top_filler: "um", pattern: "speaking pace is good but uses standard filler words." };
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('speech_fingerprint');
+      if (saved) {
+        try {
+          fingerprint = JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+
+    try {
+      const baseUrl = getBackendBaseUrl();
+      const response = await fetch(`${baseUrl}/api/game3/warmup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          top_filler: fingerprint.top_filler,
+          pattern: fingerprint.pattern
+        })
+      });
+      const result = await response.json();
+      setWarmupDrill(result);
+    } catch (e) {
+      console.error("Failed to fetch warmup drill:", e);
+    }
+  };
 
   const recordProgress = async (payload: {
     outcome: 'completed' | 'eliminated'
@@ -136,27 +229,59 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
 
   const fetchNextCard = async () => {
     // Get all the IDs we've already played so we don't get repeats
-    const usedIds = cardHistory.map(h => h.card.id);
+    const sessionSeenIds = cardHistory.map(h => h.card.id);
+    const globalSeenIds = getSeenCardIds();
+    const excludeIds = Array.from(new Set([...sessionSeenIds, ...globalSeenIds]));
 
     try {
-      const response = await fetch('http://localhost:5000/api/game3/next-card', {
+      const baseUrl = getBackendBaseUrl();
+      const response = await fetch(`${baseUrl}/api/game3/next-card`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ excludeIds: usedIds })
+        body: JSON.stringify({ 
+          excludeIds,
+          level: selectedLevel
+        })
       });
       const result = await response.json();
 
+      let targetCard = null;
       if (result.status === 'success') {
-        setCurrentCard(result.data);
-        setTimeRemaining(sessionConfig?.timePerRound || 90);
-        setTimerActive(true);
-        setAnswer('');
-        setAudioBlob(null);
-        setEvaluationResult(null);
-      } else {
-        // If we somehow run out of questions, just end the game gracefully
-        generateFinalResults('completed');
+        const card = result.data;
+        // Check if difficulty matches current selected level (case-insensitive)
+        if (card.difficulty.toUpperCase() === selectedLevel.toUpperCase()) {
+          targetCard = card;
+        }
       }
+
+      if (!targetCard) {
+        const genResponse = await fetch(`${baseUrl}/api/game3/generate-topic`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            level: selectedLevel,
+            seen_topics: Array.from(new Set([
+              ...cardHistory.map(h => h.card.title),
+              ...getSeenTopicTitles()
+            ]))
+          })
+        });
+        const genResult = await genResponse.json();
+        targetCard = {
+          id: `gen_${Date.now()}`,
+          title: genResult.topic,
+          category: "AI Generated Concept",
+          difficulty: selectedLevel
+        };
+      }
+
+      setCurrentCard(targetCard as any);
+      markCardAsSeen(targetCard.id, targetCard.title);
+      setTimeRemaining(sessionConfig?.timePerRound || 90);
+      setTimerActive(true);
+      setAnswer('');
+      setAudioBlob(null);
+      setEvaluationResult(null);
     } catch (error) {
       console.error("Failed to fetch next card:", error);
     }
@@ -204,7 +329,8 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
         // We append '.webm' so Flask and Gemini know exactly how to parse the audio format
         formData.append('audio', audioBlob, 'recording.webm');
 
-        response = await fetch('http://localhost:5000/api/game3/evaluate', {
+        const baseUrl = getBackendBaseUrl();
+        response = await fetch(`${baseUrl}/api/game3/evaluate`, {
           method: 'POST',
           body: formData,
           // Note: Do NOT set the 'Content-Type' header here. 
@@ -213,7 +339,8 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
       } 
       // 2. ROUTE TEXT TO THE JSON ENDPOINT
       else {
-        response = await fetch('http://localhost:5000/api/game3/evaluate', {
+        const baseUrl = getBackendBaseUrl();
+        response = await fetch(`${baseUrl}/api/game3/evaluate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -241,7 +368,12 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
           xpAwarded: evalData.xpAwarded,
           lifeConsumed: lifeLost,
           livesRemaining: livesRemaining - (lifeLost ? 1 : 0),
-          streak: isGood && !lifeLost ? streak + 1 : 0
+          streak: isGood && !lifeLost ? streak + 1 : 0,
+          transcript: evalData.transcript || answer,
+          weak_filler: evalData.weak_filler,
+          improve: evalData.improve,
+          better_line: evalData.better_line,
+          filler_penalty: evalData.filler_penalty
         };
 
         setStreak(newEvaluation.streak);
@@ -297,12 +429,66 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
         depth: "Strong technical depth shown.",
         brevity: "You kept answers concise and respected the time limits.",
         overall: "Solid performance. Work on reducing 'ums' to sound more authoritative."
+      },
+      levelUp: false,
+      newLevel: selectedLevel
+    }
+
+    // Level progression logic: 3 or 4 passed (score >= 75) at same level -> move to next level
+    const currentLevelCards = historySnapshot.filter(h => h.card.difficulty.toUpperCase() === selectedLevel.toUpperCase());
+    if (currentLevelCards.length >= 4) {
+      const passedCount = currentLevelCards.filter(h => h.totalScore >= 75).length;
+      if (passedCount >= 3) {
+        let nextLevel: 'EASY' | 'MEDIUM' | 'HARD' | 'GOD' = selectedLevel;
+        if (selectedLevel === 'EASY') nextLevel = 'MEDIUM';
+        else if (selectedLevel === 'MEDIUM') nextLevel = 'HARD';
+        else if (selectedLevel === 'HARD') nextLevel = 'GOD';
+        
+        if (nextLevel !== selectedLevel) {
+          setSelectedLevel(nextLevel);
+          finalResults.levelUp = true;
+          finalResults.newLevel = nextLevel;
+        }
       }
     }
 
-    setResults(finalResults);
+    setResults(finalResults as any);
     void recordProgress({ outcome, totalXp, finalScore, history: historySnapshot });
+    updateSpeechFingerprint(historySnapshot);
     setSessionState('game_over');
+  };
+
+  const countFillerWords = (text: string): number => {
+    if (!text) return 0;
+    const words = text.toLowerCase().split(/\s+/);
+    const fillers = ['um', 'uh', 'like', 'so', 'actually', 'basically'];
+    return words.filter(w => fillers.includes(w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ""))).length;
+  };
+
+  const updateSpeechFingerprint = (historySnapshot: CardResult[]) => {
+    const allTranscripts = historySnapshot.map(h => h.transcript || "");
+    const fillerHistory = historySnapshot.map(h => countFillerWords(h.transcript || ""));
+    const scoreHistory = historySnapshot.map(h => h.totalScore);
+    const weakFiller = historySnapshot[historySnapshot.length - 1]?.weak_filler || "um";
+
+    const baseUrl = getBackendBaseUrl();
+    fetch(`${baseUrl}/api/game3/update-profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        all_transcripts: allTranscripts,
+        filler_history: fillerHistory,
+        score_history: scoreHistory,
+        weak_filler: weakFiller
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data && !data.error) {
+        localStorage.setItem('speech_fingerprint', JSON.stringify(data));
+      }
+    })
+    .catch(err => console.error("Error updating profile fingerprint:", err));
   };
 
   const abandonGame = async () => {
@@ -315,6 +501,8 @@ export function Game3Provider({ children }: { children: React.ReactNode }) {
       inputMode, answer, audioBlob, timeRemaining, timerActive,
       evaluationResult, isEvaluating, results, streak, livesRemaining,
       xpAwarded, badgesEarned,
+      selectedLevel, setSelectedLevel,
+      warmupDrill, setWarmupDrill, fetchWarmupDrill,
       setInputMode, setAnswer, setAudioBlob, submitAnswer, startGame, advanceToNextCard, abandonGame, setBadgesEarned
     }}>
       {children}

@@ -1,9 +1,16 @@
 import os
+import json
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
+import google.generativeai as genai
+
+# Configure genai globally
+api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
 
 from app.extensions import jwt
 from app.routes.dashboard_routes import dashboard_bp

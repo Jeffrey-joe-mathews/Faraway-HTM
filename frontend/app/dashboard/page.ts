@@ -130,6 +130,18 @@ export default function Dashboard() {
     userType: '',
     focusAreas: '',
   })
+  const [fingerprint, setFingerprint] = useState<any>(null)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('speech_fingerprint')
+      if (saved) {
+        try {
+          setFingerprint(JSON.parse(saved))
+        } catch (e) {}
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem('authToken')
@@ -322,6 +334,14 @@ export default function Dashboard() {
             ),
             createElement('h1', { className: 'max-w-3xl text-4xl font-semibold leading-tight lg:text-5xl', style: { color: colors.text } }, `Welcome back, ${user.name}`),
             createElement('p', { className: 'mt-4 max-w-2xl text-base leading-7 lg:text-lg', style: { color: colors.muted } }, 'Keep your practice focused with short games, clear feedback, and progress that is easy to scan.'),
+            fingerprint && createElement(
+              'div',
+              { className: 'mt-4 p-3.5 rounded-xl border border-primary/20 bg-primary/5 flex items-center gap-2 max-w-xl animate-fade-in' },
+              createElement('span', { className: 'text-lg' }, '🎙️'),
+              createElement('p', { className: 'text-sm font-semibold', style: { color: colors.text } }, 
+                `Your pattern: "${fingerprint.top_filler}" ${fingerprint.trigger}`
+              )
+            ),
             createElement(
               'div',
               { className: 'mt-7 flex flex-col gap-3 sm:flex-row' },

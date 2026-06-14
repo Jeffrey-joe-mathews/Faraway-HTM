@@ -49,10 +49,30 @@ def evaluate_audio(req):
         return jsonify({"status": "success", "data": result}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+def transcribe_audio(req):
+    audio_file = req.files.get('audio')
+    if not audio_file:
+        return jsonify({"status": "error", "message": "No audio file provided"}), 400
+
+    try:
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, f"temp_transcribe_{os.urandom(4).hex()}.webm")
+        audio_file.save(temp_path)
+        
+        transcript = game3_service.transcribe_audio_file(temp_path)
+        
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        return jsonify({"status": "success", "transcript": transcript}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
         
 def get_next_card(data):
     exclude_ids = data.get('excludeIds', [])
-    result = game3_service.fetch_random_concept(exclude_ids)
+    level = data.get('level')
+    result = game3_service.fetch_random_concept(exclude_ids, level)
     
     if not result:
         return jsonify({"status": "error", "message": "No more questions available"}), 404
